@@ -35,8 +35,12 @@ public class OpenAiVisionService {
   this.model = model;
  }
 
+ public boolean isConfigured() {
+  return StringUtils.hasText(apiKey);
+ }
+
  public VisionAnalysisResult analyze(MultipartFile file) {
-  if (!StringUtils.hasText(apiKey)) {
+  if (!isConfigured()) {
    throw new IllegalStateException("OPENAI_API_KEY is not configured");
   }
 
