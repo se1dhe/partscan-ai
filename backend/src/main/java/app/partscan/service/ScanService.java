@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @Service
 public class ScanService {
  private static final Logger log = LoggerFactory.getLogger(ScanService.class);
@@ -28,10 +30,14 @@ public class ScanService {
  }
 
  public ScanResponse scan(MultipartFile file) {
-  log.info("Scan started: fileName={}, contentType={}, size={} bytes", file.getOriginalFilename(), file.getContentType(), file.getSize());
+  return scan(List.of(file));
+ }
 
-  VisionAnalysisResult result = analyzeWithFallback(file);
-  log.info("Scan analysis completed: provider={}", result.provider());
+ public ScanResponse scan(List<MultipartFile> files) {
+  log.info("Scan started: images={}, totalSize={} bytes", files.size(), totalSize(files));
+
+  VisionAnalysisResult result = analyzeWithFallback(files);
+  log.info("Scan analysis completed: provider={}, images={}", result.provider(), files.size());
 
   Part part = toPart(result.analysis(), result.rawResponse());
   Part savedPart = partRepository.save(part);
@@ -40,34 +46,34 @@ public class ScanService {
   return new ScanResponse("saved", savedPart);
  }
 
- private VisionAnalysisResult analyzeWithFallback(MultipartFile file) {
+ private VisionAnalysisResult analyzeWithFallback(List<MultipartFile> files) {
   if (!openAiVisionService.isConfigured()) {
    log.info("OpenAI is not configured. Using Gemini directly");
-   return analyzeWithGemini(file);
+   return analyzeWithGemini(files);
   }
 
   try {
    log.info("Trying AI analysis with OpenAI");
-   return openAiVisionService.analyze(file);
+   return openAiVisionService.analyze(files);
   } catch (OpenAiVisionException openAiError) {
    log.warn("OpenAI analysis failed: status={}, message={}", openAiError.getStatus(), openAiError.getMessage());
-   return analyzeWithGeminiFallback(file, openAiError);
+   return analyzeWithGeminiFallback(files, openAiError);
   } catch (IllegalStateException openAiError) {
    log.warn("OpenAI analysis is unavailable: message={}", openAiError.getMessage());
-   return analyzeWithGeminiFallback(file, openAiError);
+   return analyzeWithGeminiFallback(files, openAiError);
   }
  }
 
- private VisionAnalysisResult analyzeWithGemini(MultipartFile file) {
+ private VisionAnalysisResult analyzeWithGemini(List<MultipartFile> files) {
   if (!geminiVisionService.isConfigured()) {
    throw new IllegalStateException("No AI provider is configured. Set GEMINI_API_KEY or OPENAI_API_KEY.");
   }
 
   log.info("Trying AI analysis with Gemini");
-  return geminiVisionService.analyze(file);
+  return geminiVisionService.analyze(files);
  }
 
- private VisionAnalysisResult analyzeWithGeminiFallback(MultipartFile file, Exception openAiError) {
+ private VisionAnalysisResult analyzeWithGeminiFallback(List<MultipartFile> files, Exception openAiError) {
   if (!geminiVisionService.isConfigured()) {
    log.error("Gemini fallback is not configured. Original OpenAI error: {}", openAiError.getMessage());
    throw openAiError instanceof RuntimeException runtimeException ? runtimeException : new IllegalStateException(openAiError);
@@ -75,7 +81,7 @@ public class ScanService {
 
   try {
    log.info("Trying AI analysis with Gemini fallback");
-   return geminiVisionService.analyze(file);
+   return geminiVisionService.analyze(files);
   } catch (GeminiVisionException geminiError) {
    log.warn("Gemini fallback failed: status={}, message={}. Original OpenAI error: {}", geminiError.getStatus(), geminiError.getMessage(), openAiError.getMessage());
    throw geminiError;
@@ -83,6 +89,10 @@ public class ScanService {
    log.error("Gemini fallback failed with unexpected error. Original OpenAI error: {}", openAiError.getMessage(), geminiError);
    throw geminiError;
   }
+ }
+
+ private long totalSize(List<MultipartFile> files) {
+  return files.stream().mapToLong(MultipartFile::getSize).sum();
  }
 
  private Part toPart(PartAnalysisDto analysis, String rawResponse) {
@@ -110,7 +120,7 @@ public class ScanService {
  private String reviewStatus(PartAnalysisDto analysis) {
   Double confidence = analysis.confidence();
   if (Boolean.TRUE.equals(analysis.needsBetterPhoto())) return "needs_photo";
-  if (confidence == null || confidence < 0.72) return "needs_review";
+  if (confidence == null || confidence < 0.9) return "needs_review";
   return "pending";
  }
 
