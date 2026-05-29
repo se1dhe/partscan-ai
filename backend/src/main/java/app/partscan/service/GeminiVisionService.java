@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -46,13 +47,17 @@ public class GeminiVisionService {
  }
 
  public VisionAnalysisResult analyze(MultipartFile file) {
+  return analyze(List.of(file));
+ }
+
+ public VisionAnalysisResult analyze(List<MultipartFile> files) {
   if (!isConfigured()) {
    throw new IllegalStateException("GEMINI_API_KEY is not configured");
   }
 
   Map<String, Object> body;
   try {
-   body = requestBody(file);
+   body = requestBody(files);
   } catch (IOException e) {
    throw new IllegalStateException("Could not read uploaded image for Gemini", e);
   }
@@ -68,17 +73,24 @@ public class GeminiVisionService {
   }
  }
 
- private Map<String, Object> requestBody(MultipartFile file) throws IOException {
+ private Map<String, Object> requestBody(List<MultipartFile> files) throws IOException {
+  List<Object> parts = new ArrayList<>();
+  parts.add(Map.of("text", prompt(files.size())));
+
+  int index = 1;
+  for (MultipartFile file : files) {
+   parts.add(Map.of("text", "Image " + index + " of " + files.size() + ": analyze this angle as additional evidence."));
+   parts.add(Map.of("inlineData", Map.of(
+    "mimeType", contentType(file),
+    "data", Base64.getEncoder().encodeToString(file.getBytes())
+   )));
+   index++;
+  }
+
   return Map.of(
    "contents", List.of(Map.of(
     "role", "user",
-    "parts", List.of(
-     Map.of("text", prompt()),
-     Map.of("inlineData", Map.of(
-      "mimeType", contentType(file),
-      "data", Base64.getEncoder().encodeToString(file.getBytes())
-     ))
-    )
+    "parts", parts
    )),
    "generationConfig", Map.of(
     "responseMimeType", "application/json",
@@ -142,21 +154,24 @@ public class GeminiVisionService {
   throw new IllegalStateException("Gemini response did not contain JSON analysis");
  }
 
- private String prompt() {
+ private String prompt(int imageCount) {
   return """
    You are a careful automotive spare parts catalog expert for a workshop and dismantling yard.
-   Analyze only visible evidence in the photo. Do not invent article numbers, brands, vehicle models, or exact fitment.
+   You may receive one image or multiple images of the same part from different angles. Treat all images as the same physical part.
+   If multiple images are provided, combine evidence from all angles and improve the identification only when visible details support it.
+   Analyze only visible evidence. Do not invent article numbers, brands, vehicle models, or exact fitment.
    First identify the generic part type, then look for markings, labels, logos, connectors, ports, shape, material, wear, and context.
    Return Russian text for mechanic-facing fields, but preserve brand names, numbers, codes, and markings exactly as visible.
    normalizedName must be a short generic normalized Russian name, for example: "блок abs", "корпус воздушного фильтра", "охладитель egr".
    articleNumber must be empty when no readable part number is visible.
    compatibleVehicles must contain only cautious likely candidates. If there is no visual evidence, return an empty list.
-   confidence must reflect visible evidence, not guesswork: use below 0.7 when the image does not show markings or the part is ambiguous.
+   confidence must reflect visible evidence, not guesswork. Use below 0.9 unless markings, shape, ports, and context strongly agree.
    needsBetterPhoto must be true when another angle, closer marking photo, or better light is required.
    photoTips must explain what exact extra photo would improve identification.
+   For imageCount=%d, if confidence is below 0.9, photoTips must ask for one of these angles: top view, side view, close-up of marking, close-up of connector/ports, reverse side.
    identificationReason must explain the key visual clues in one concise Russian sentence.
-   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.85 or the part may be confused with another part.
-   """;
+   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.9 or the part may be confused with another part.
+   """.formatted(imageCount);
  }
 
  private Map<String, Object> schema() {
