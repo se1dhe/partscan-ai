@@ -12,6 +12,17 @@ const guidance = document.getElementById('guidance');
 const statusLabel = document.getElementById('status');
 const progressLine = document.getElementById('progressLine')?.querySelector('span');
 
+const SCANNER_TICK_MS = 650;
+const REQUIRED_STABLE_TICKS = 3;
+const NORMAL_SCAN_COOLDOWN_MS = 12_000;
+const SAVED_SCAN_COOLDOWN_MS = 18_000;
+const REJECTED_SCAN_COOLDOWN_MS = 25_000;
+const ERROR_SCAN_COOLDOWN_MS = 10_000;
+const RATE_LIMIT_COOLDOWN_MS = 12_000;
+const ANGLE_CAPTURE_COOLDOWN_MS = 1_800;
+const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 16;
+const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 10;
+
 const angleSteps = [
   { short: 'целиком', shape: 'shape-main', title: 'Деталь целиком', hint: 'Вся деталь внутри контура', caption: 'целиком' },
   { short: 'номер', shape: 'shape-marking', title: 'Маркировка', hint: 'Номер, наклейка или логотип в рамке', caption: 'номер / логотип' },
@@ -23,11 +34,17 @@ let stream;
 let scannerTimer;
 let scanning = false;
 let pausedUntil = 0;
+let pauseReason = '';
 let previousFingerprint = null;
 let stableScore = 0;
 let capturedAngles = [];
+let capturedAngleFingerprints = [];
 let currentAngleIndex = 0;
 let multiAngleMode = false;
+let lastSubmittedFingerprint = null;
+let lastRejectedFingerprint = null;
+let lastCaptureFingerprint = null;
+let lastAiRequestAt = 0;
 
 startCamera();
 
@@ -62,28 +79,45 @@ function stopCamera() {
 function startAutoScanner() {
   if (scannerTimer) clearInterval(scannerTimer);
   scannerTimer = setInterval(async () => {
-    if (!video.videoWidth || scanning || Date.now() < pausedUntil) return;
+    if (!video.videoWidth || scanning) return;
 
+    const now = Date.now();
     const metrics = sampleFrameMetrics();
+
+    if (now < pausedUntil) {
+      stableScore = 0;
+      showCooldown(now);
+      updateProgress(metrics, { ok: false });
+      return;
+    }
+
     const ready = isFrameReady(metrics);
     updateProgress(metrics, ready);
 
-    if (!ready) {
-      statusLabel.textContent = metrics.reason;
-      guidance.textContent = multiAngleMode ? angleSteps[currentAngleIndex].hint : metrics.hint;
+    if (!ready.ok) {
+      statusLabel.textContent = ready.reason;
+      guidance.textContent = multiAngleMode ? angleSteps[currentAngleIndex].hint : ready.hint;
+      return;
+    }
+
+    const duplicateGuard = duplicateFrameGuard(metrics);
+    if (!duplicateGuard.ok) {
+      stableScore = 0;
+      statusLabel.textContent = duplicateGuard.reason;
+      guidance.textContent = duplicateGuard.hint;
       return;
     }
 
     stableScore += 1;
     statusLabel.textContent = 'Держите ровно';
-    guidance.textContent = `Автозахват ${Math.min(stableScore, 3)}/3`;
+    guidance.textContent = `Автозахват ${Math.min(stableScore, REQUIRED_STABLE_TICKS)}/${REQUIRED_STABLE_TICKS}`;
 
-    if (stableScore >= 3) {
+    if (stableScore >= REQUIRED_STABLE_TICKS) {
       stableScore = 0;
-      if (multiAngleMode) await captureAngle();
-      else await submitScan([await captureBlob()]);
+      if (multiAngleMode) await captureAngle(metrics.fingerprint);
+      else await submitScan([await captureBlob()], metrics.fingerprint);
     }
-  }, 650);
+  }, SCANNER_TICK_MS);
 }
 
 function sampleFrameMetrics() {
@@ -110,7 +144,7 @@ function sampleFrameMetrics() {
   const contrast = contrastSum / pixels;
   const motion = previousFingerprint == null ? 999 : Math.abs(fingerprint - previousFingerprint) / pixels;
   previousFingerprint = fingerprint;
-  return { brightness, contrast, motion };
+  return { brightness, contrast, motion, fingerprint };
 }
 
 function isFrameReady(metrics) {
@@ -126,10 +160,45 @@ function fail(metrics, reason, hint) {
   return { ...metrics, ok: false, reason, hint };
 }
 
+function duplicateFrameGuard(metrics) {
+  if (multiAngleMode) {
+    const previousAngleFingerprint = capturedAngleFingerprints[capturedAngleFingerprints.length - 1];
+    if (previousAngleFingerprint != null && fingerprintDelta(metrics.fingerprint, previousAngleFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
+      return { ok: false, reason: 'Поверните деталь', hint: angleSteps[currentAngleIndex].hint };
+    }
+    return { ok: true };
+  }
+
+  if (lastSubmittedFingerprint != null && fingerprintDelta(metrics.fingerprint, lastSubmittedFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN) {
+    return { ok: false, reason: 'Кадр уже проверен', hint: 'Измените ракурс или покажите другую деталь' };
+  }
+
+  if (lastRejectedFingerprint != null && fingerprintDelta(metrics.fingerprint, lastRejectedFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN) {
+    return { ok: false, reason: 'Это уже проверяли', hint: 'Покажите именно автодеталь' };
+  }
+
+  return { ok: true };
+}
+
+function fingerprintDelta(current, previous) {
+  return Math.abs(current - previous) / (48 * 48);
+}
+
 function updateProgress(metrics, ready) {
   if (!progressLine) return;
   const base = ready.ok ? 65 + stableScore * 12 : Math.max(8, Math.min(55, metrics.contrast * 4));
   progressLine.style.width = `${Math.min(100, base)}%`;
+}
+
+function showCooldown(now) {
+  const seconds = Math.ceil((pausedUntil - now) / 1000);
+  statusLabel.textContent = pauseReason || 'Пауза';
+  guidance.textContent = seconds > 0 ? `Следующий анализ через ${seconds} сек.` : 'Можно продолжать';
+}
+
+function setCooldown(milliseconds, reason) {
+  pausedUntil = Date.now() + milliseconds;
+  pauseReason = reason;
 }
 
 async function captureBlob() {
@@ -144,10 +213,12 @@ async function captureBlob() {
   return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
 }
 
-async function submitScan(blobs) {
+async function submitScan(blobs, fingerprint = null) {
   if (scanning) return;
   scanning = true;
-  pausedUntil = Date.now() + 3500;
+  lastAiRequestAt = Date.now();
+  if (fingerprint != null) lastSubmittedFingerprint = fingerprint;
+  setCooldown(NORMAL_SCAN_COOLDOWN_MS, 'Анализ кадра');
   setStatus(blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализ кадра', 'Камера остаётся живой');
 
   try {
@@ -159,7 +230,13 @@ async function submitScan(blobs) {
     const payload = await readJsonResponse(response);
     if (!response.ok) throw new Error(payload.error || payload.detail || payload.message || 'Ошибка сканирования');
 
+    if (payload.status === 'rate_limited') {
+      showRateLimited(payload);
+      return;
+    }
+
     if (payload.status === 'rejected') {
+      if (fingerprint != null) lastRejectedFingerprint = fingerprint;
       showRejected(payload);
       tg?.HapticFeedback?.notificationOccurred('warning');
       return;
@@ -169,6 +246,7 @@ async function submitScan(blobs) {
     tg?.HapticFeedback?.notificationOccurred('success');
   } catch (error) {
     setStatus('Ошибка анализа', error.message || 'Попробуйте ещё раз');
+    setCooldown(ERROR_SCAN_COOLDOWN_MS, 'Пауза после ошибки');
     tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
     scanning = false;
@@ -186,7 +264,7 @@ function handleScanResult(part) {
 
   setStatus(`${part?.name || 'Деталь'} · ${percent}%`, 'Сохранено в базе');
   resetMultiAngleMode();
-  pausedUntil = Date.now() + 5000;
+  setCooldown(SAVED_SCAN_COOLDOWN_MS, 'Деталь сохранена');
 }
 
 function showRejected(payload) {
@@ -195,37 +273,57 @@ function showRejected(payload) {
   angleTitle.textContent = 'Это не автодеталь';
   angleHint.textContent = payload.nextAction || 'Наведите камеру на автомобильную деталь';
   setStatus('Не сохраняю в базу', payload.message || 'В кадре не похожая на автодеталь вещь');
-  pausedUntil = Date.now() + 6000;
+  setCooldown(REJECTED_SCAN_COOLDOWN_MS, 'Не автодеталь');
+}
+
+function showRateLimited(payload) {
+  setStatus('Слишком часто', payload.message || 'Нужно немного подождать');
+  setCooldown(RATE_LIMIT_COOLDOWN_MS, 'Лимит защиты');
 }
 
 function enterMultiAngleMode() {
   multiAngleMode = true;
   capturedAngles = [];
+  capturedAngleFingerprints = [];
   currentAngleIndex = 0;
   setCoach(angleSteps[currentAngleIndex]);
+  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте ракурс');
 }
 
-async function captureAngle() {
+async function captureAngle(fingerprint) {
+  if (fingerprint != null && lastCaptureFingerprint != null && fingerprintDelta(fingerprint, lastCaptureFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
+    setStatus('Ракурс не изменился', angleSteps[currentAngleIndex].hint);
+    setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Поверните деталь');
+    return;
+  }
+
   capturedAngles.push(await captureBlob());
+  if (fingerprint != null) {
+    capturedAngleFingerprints.push(fingerprint);
+    lastCaptureFingerprint = fingerprint;
+  }
   tg?.HapticFeedback?.impactOccurred('light');
 
   if (capturedAngles.length >= angleSteps.length) {
     const blobs = [...capturedAngles];
+    const finalFingerprint = fingerprint ?? lastCaptureFingerprint;
     resetMultiAngleMode(false);
-    await submitScan(blobs);
+    await submitScan(blobs, finalFingerprint);
     return;
   }
 
   currentAngleIndex = capturedAngles.length;
   setCoach(angleSteps[currentAngleIndex]);
   setStatus(`${capturedAngles.length}/${angleSteps.length} снято`, angleSteps[currentAngleIndex].hint);
-  pausedUntil = Date.now() + 1600;
+  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Поверните деталь');
 }
 
 function resetMultiAngleMode(resetCoach = true) {
   multiAngleMode = false;
   capturedAngles = [];
+  capturedAngleFingerprints = [];
   currentAngleIndex = 0;
+  lastCaptureFingerprint = null;
   if (resetCoach) setCoach(angleSteps[0]);
 }
 
