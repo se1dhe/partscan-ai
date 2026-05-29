@@ -41,6 +41,11 @@ public class ScanService {
  }
 
  private VisionAnalysisResult analyzeWithFallback(MultipartFile file) {
+  if (!openAiVisionService.isConfigured()) {
+   log.info("OpenAI is not configured. Using Gemini directly");
+   return analyzeWithGemini(file);
+  }
+
   try {
    log.info("Trying AI analysis with OpenAI");
    return openAiVisionService.analyze(file);
@@ -51,6 +56,15 @@ public class ScanService {
    log.warn("OpenAI analysis is unavailable: message={}", openAiError.getMessage());
    return analyzeWithGeminiFallback(file, openAiError);
   }
+ }
+
+ private VisionAnalysisResult analyzeWithGemini(MultipartFile file) {
+  if (!geminiVisionService.isConfigured()) {
+   throw new IllegalStateException("No AI provider is configured. Set GEMINI_API_KEY or OPENAI_API_KEY.");
+  }
+
+  log.info("Trying AI analysis with Gemini");
+  return geminiVisionService.analyze(file);
  }
 
  private VisionAnalysisResult analyzeWithGeminiFallback(MultipartFile file, Exception openAiError) {
