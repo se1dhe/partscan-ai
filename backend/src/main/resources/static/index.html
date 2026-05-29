@@ -8,47 +8,30 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <main class="app">
+  <main class="app scan-page">
     <section class="scanner">
       <div class="camera-shell">
         <video id="camera" autoplay playsinline muted></video>
         <canvas id="frameCanvas" hidden></canvas>
 
-        <button id="catalogToggle" class="catalog-button" type="button">База <span id="countLabel">0</span></button>
+        <a class="catalog-link" href="/catalog.html">База</a>
 
         <div id="partShapeGuide" class="part-shape-guide shape-main">
-          <div id="shapeCaption" class="shape-caption">Деталь целиком</div>
+          <div id="shapeCaption" class="shape-caption">держите деталь в контуре</div>
         </div>
 
         <div class="scan-hint">
-          <div id="angleTitle" class="angle-title">Деталь целиком</div>
-          <div id="angleHint" class="angle-hint">Поместите деталь в рамку</div>
+          <div id="angleTitle" class="angle-title">Наведи на автодеталь</div>
+          <div id="angleHint" class="angle-hint">Захват произойдёт автоматически</div>
         </div>
 
-        <div class="bottom-sheet">
+        <div class="bottom-status">
           <div id="status" class="status-line">Камера запускается</div>
-          <div id="guidance" class="guidance">Наведите камеру и нажмите сканирование</div>
-          <div id="angleStrip" class="angle-strip" hidden></div>
-          <div class="controls">
-            <button id="scanButton" class="primary-button" type="button">Сканировать</button>
-            <button id="secondaryActionButton" class="secondary-button" type="button" hidden>Доснять</button>
-          </div>
-          <button id="resetAnglesButton" class="ghost-button" type="button" hidden>Сбросить досъёмку</button>
+          <div id="guidance" class="guidance">Держите деталь внутри контура</div>
+          <div id="progressLine" class="progress-line"><span></span></div>
         </div>
       </div>
     </section>
-
-    <aside id="catalogPanel" class="catalog-panel" hidden>
-      <div class="catalog-header">
-        <div>
-          <h2>База деталей</h2>
-          <p class="meta">Сканы и категории</p>
-        </div>
-        <button id="catalogClose" class="icon-button" type="button">×</button>
-      </div>
-      <div id="categoryFilters" class="category-filters"></div>
-      <div id="partsList" class="parts-list"></div>
-    </aside>
   </main>
   <script src="/app.js"></script>
 </body>
