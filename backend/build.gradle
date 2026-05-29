@@ -1,0 +1,5 @@
+plugins {
+ id 'java'
+}
+group='app.partscan'
+version='0.1.0'
