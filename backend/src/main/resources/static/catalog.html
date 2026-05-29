@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>База деталей · PartScan AI</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="catalog-page">
+    <header class="catalog-top">
+      <a href="/" class="back-link">← Скан</a>
+      <div>
+        <h1>База деталей</h1>
+        <p id="catalogMeta">Загрузка</p>
+      </div>
+    </header>
+
+    <section class="catalog-search-card">
+      <input id="catalogSearch" class="catalog-search" placeholder="Поиск по названию, номеру, категории">
+      <div id="categoryFilters" class="category-filters catalog-wrap"></div>
+    </section>
+
+    <section id="partsList" class="parts-list catalog-list"></section>
+  </main>
+  <script src="/catalog.js"></script>
+</body>
+</html>
