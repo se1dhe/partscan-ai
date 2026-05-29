@@ -3,13 +3,17 @@ package app.partscan.service;
 import app.partscan.dto.PartAnalysisDto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
@@ -17,6 +21,9 @@ import java.util.Map;
 
 @Service
 public class GeminiVisionService {
+ private static final Logger log = LoggerFactory.getLogger(GeminiVisionService.class);
+ private static final int MAX_ATTEMPTS = 3;
+
  private final RestClient restClient;
  private final ObjectMapper objectMapper;
  private final String apiKey;
@@ -43,39 +50,79 @@ public class GeminiVisionService {
    throw new IllegalStateException("GEMINI_API_KEY is not configured");
   }
 
+  Map<String, Object> body;
   try {
-   Map<String, Object> body = Map.of(
-    "contents", List.of(Map.of(
-     "role", "user",
-     "parts", List.of(
-      Map.of("text", prompt()),
-      Map.of("inlineData", Map.of(
-       "mimeType", contentType(file),
-       "data", Base64.getEncoder().encodeToString(file.getBytes())
-      ))
-     )
-    )),
-    "generationConfig", Map.of(
-     "responseMimeType", "application/json",
-     "responseSchema", schema()
-    )
-   );
+   body = requestBody(file);
+  } catch (IOException e) {
+   throw new IllegalStateException("Could not read uploaded image for Gemini", e);
+  }
 
-   String response = restClient.post()
-    .uri("/models/{model}:generateContent", model)
-    .contentType(MediaType.APPLICATION_JSON)
-    .headers(headers -> headers.set("x-goog-api-key", apiKey))
-    .body(body)
-    .retrieve()
-    .body(String.class);
+  String response = executeWithRetry(body);
 
+  try {
    String json = extractText(response);
    PartAnalysisDto analysis = objectMapper.readValue(json, PartAnalysisDto.class);
    return new VisionAnalysisResult(analysis, response, "gemini");
-  } catch (RestClientResponseException e) {
-   throw GeminiVisionException.from(e, objectMapper);
   } catch (IOException e) {
    throw new IllegalStateException("Could not analyze uploaded image with Gemini", e);
+  }
+ }
+
+ private Map<String, Object> requestBody(MultipartFile file) throws IOException {
+  return Map.of(
+   "contents", List.of(Map.of(
+    "role", "user",
+    "parts", List.of(
+     Map.of("text", prompt()),
+     Map.of("inlineData", Map.of(
+      "mimeType", contentType(file),
+      "data", Base64.getEncoder().encodeToString(file.getBytes())
+     ))
+    )
+   )),
+   "generationConfig", Map.of(
+    "responseMimeType", "application/json",
+    "responseSchema", schema()
+   )
+  );
+ }
+
+ private String executeWithRetry(Map<String, Object> body) {
+  GeminiVisionException lastException = null;
+
+  for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+   try {
+    if (attempt > 1) log.info("Retrying Gemini analysis: attempt={}/{}", attempt, MAX_ATTEMPTS);
+    return restClient.post()
+     .uri("/models/{model}:generateContent", model)
+     .contentType(MediaType.APPLICATION_JSON)
+     .headers(headers -> headers.set("x-goog-api-key", apiKey))
+     .body(body)
+     .retrieve()
+     .body(String.class);
+   } catch (RestClientResponseException e) {
+    GeminiVisionException currentException = GeminiVisionException.from(e, objectMapper);
+    lastException = currentException;
+    if (!shouldRetry(e) || attempt == MAX_ATTEMPTS) throw currentException;
+    sleepBeforeRetry(attempt);
+   }
+  }
+
+  throw lastException == null ? new IllegalStateException("Gemini request failed") : lastException;
+ }
+
+ private boolean shouldRetry(RestClientResponseException exception) {
+  HttpStatus status = HttpStatus.resolve(exception.getStatusCode().value());
+  return status == HttpStatus.SERVICE_UNAVAILABLE || status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.BAD_GATEWAY || status == HttpStatus.GATEWAY_TIMEOUT;
+ }
+
+ private void sleepBeforeRetry(int attempt) {
+  long delayMillis = attempt == 1 ? 1800 : 4200;
+  try {
+   Thread.sleep(delayMillis);
+  } catch (InterruptedException interruptedException) {
+   Thread.currentThread().interrupt();
+   throw new IllegalStateException("Gemini retry was interrupted", interruptedException);
   }
  }
 
@@ -97,31 +144,55 @@ public class GeminiVisionService {
 
  private String prompt() {
   return """
-   You are helping catalog spare automotive parts from a workshop photo.
-   Identify the part only from visible evidence, even when no part number or label is visible.
-   If a field is uncertain, use a cautious value like "unknown"; articleNumber may be an empty string when no number is visible.
-   Return compact Russian text where it helps the mechanic, but keep brand names and part numbers exactly as seen.
-   Estimate confidence from 0 to 1. Compatible vehicles must be likely candidates, not guarantees.
-   Prefer useful generic identification over refusing: for example "brake caliper", "engine mount", "ABS sensor", "air duct", "suspension arm".
+   You are a careful automotive spare parts catalog expert for a workshop and dismantling yard.
+   Analyze only visible evidence in the photo. Do not invent article numbers, brands, vehicle models, or exact fitment.
+   First identify the generic part type, then look for markings, labels, logos, connectors, ports, shape, material, wear, and context.
+   Return Russian text for mechanic-facing fields, but preserve brand names, numbers, codes, and markings exactly as visible.
+   normalizedName must be a short generic normalized Russian name, for example: "блок abs", "корпус воздушного фильтра", "охладитель egr".
+   articleNumber must be empty when no readable part number is visible.
+   compatibleVehicles must contain only cautious likely candidates. If there is no visual evidence, return an empty list.
+   confidence must reflect visible evidence, not guesswork: use below 0.7 when the image does not show markings or the part is ambiguous.
+   needsBetterPhoto must be true when another angle, closer marking photo, or better light is required.
+   photoTips must explain what exact extra photo would improve identification.
+   identificationReason must explain the key visual clues in one concise Russian sentence.
+   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.85 or the part may be confused with another part.
    """;
  }
 
  private Map<String, Object> schema() {
   Map<String, Object> stringArray = Map.of("type", "ARRAY", "items", Map.of("type", "STRING"));
-  return Map.of(
+  Map<String, Object> alternative = Map.of(
    "type", "OBJECT",
-   "required", List.of("name", "manufacturer", "articleNumber", "category", "confidence", "description", "condition", "visibleMarkings", "compatibleVehicles", "sourceHints"),
+   "required", List.of("name", "confidence", "reason"),
    "properties", Map.of(
     "name", Map.of("type", "STRING"),
-    "manufacturer", Map.of("type", "STRING"),
-    "articleNumber", Map.of("type", "STRING"),
-    "category", Map.of("type", "STRING"),
     "confidence", Map.of("type", "NUMBER"),
-    "description", Map.of("type", "STRING"),
-    "condition", Map.of("type", "STRING"),
-    "visibleMarkings", stringArray,
-    "compatibleVehicles", stringArray,
-    "sourceHints", stringArray
+    "reason", Map.of("type", "STRING")
+   )
+  );
+
+  return Map.of(
+   "type", "OBJECT",
+   "required", List.of(
+    "name", "normalizedName", "manufacturer", "articleNumber", "category", "confidence", "description", "condition",
+    "needsBetterPhoto", "identificationReason", "visibleMarkings", "compatibleVehicles", "sourceHints", "photoTips", "alternatives"
+   ),
+   "properties", Map.ofEntries(
+    Map.entry("name", Map.of("type", "STRING")),
+    Map.entry("normalizedName", Map.of("type", "STRING")),
+    Map.entry("manufacturer", Map.of("type", "STRING")),
+    Map.entry("articleNumber", Map.of("type", "STRING")),
+    Map.entry("category", Map.of("type", "STRING")),
+    Map.entry("confidence", Map.of("type", "NUMBER")),
+    Map.entry("description", Map.of("type", "STRING")),
+    Map.entry("condition", Map.of("type", "STRING")),
+    Map.entry("needsBetterPhoto", Map.of("type", "BOOLEAN")),
+    Map.entry("identificationReason", Map.of("type", "STRING")),
+    Map.entry("visibleMarkings", stringArray),
+    Map.entry("compatibleVehicles", stringArray),
+    Map.entry("sourceHints", stringArray),
+    Map.entry("photoTips", stringArray),
+    Map.entry("alternatives", Map.of("type", "ARRAY", "items", alternative))
    )
   );
  }
