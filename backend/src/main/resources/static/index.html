@@ -14,43 +14,26 @@
         <video id="camera" autoplay playsinline muted></video>
         <canvas id="frameCanvas" hidden></canvas>
 
-        <div class="topbar overlay-panel">
-          <div>
-            <h1>PartScan AI</h1>
-            <p id="status">Наведите камеру на деталь</p>
-          </div>
-          <button id="catalogToggle" class="catalog-button" type="button">База <span id="countLabel">0</span></button>
-        </div>
-
-        <div id="angleCoach" class="angle-coach overlay-panel">
-          <div class="angle-step-row">
-            <span id="angleStepLabel" class="angle-step-label">Обычный скан</span>
-            <span id="angleProgress" class="angle-progress">1/1</span>
-          </div>
-          <div id="angleTitle" class="angle-title">Деталь целиком</div>
-          <div id="angleHint" class="angle-hint">Поместите всю деталь внутрь пунктирной рамки. Маркировку держите ближе к центру.</div>
-        </div>
+        <button id="catalogToggle" class="catalog-button" type="button">База <span id="countLabel">0</span></button>
 
         <div id="partShapeGuide" class="part-shape-guide shape-main">
           <div id="shapeCaption" class="shape-caption">Деталь целиком</div>
         </div>
 
-        <div class="camera-badges">
-          <div id="lightBadge" class="camera-badge">Свет: —</div>
-          <div id="sharpBadge" class="camera-badge">Кадр: —</div>
+        <div class="scan-hint">
+          <div id="angleTitle" class="angle-title">Деталь целиком</div>
+          <div id="angleHint" class="angle-hint">Поместите деталь в рамку</div>
         </div>
 
-        <div class="bottom-sheet overlay-panel">
-          <div id="guidance" class="guidance">Держите деталь в рамке и нажмите сканирование.</div>
+        <div class="bottom-sheet">
+          <div id="status" class="status-line">Камера запускается</div>
+          <div id="guidance" class="guidance">Наведите камеру и нажмите сканирование</div>
           <div id="angleStrip" class="angle-strip" hidden></div>
           <div class="controls">
             <button id="scanButton" class="primary-button" type="button">Сканировать</button>
-            <button id="secondaryActionButton" class="secondary-button" type="button" hidden>Добрать ракурсы</button>
+            <button id="secondaryActionButton" class="secondary-button" type="button" hidden>Доснять</button>
           </div>
-          <div class="mini-actions">
-            <button id="resetAnglesButton" class="ghost-button" type="button" hidden>Сбросить ракурсы</button>
-            <button id="retryButton" class="ghost-button" type="button">Перезапустить камеру</button>
-          </div>
+          <button id="resetAnglesButton" class="ghost-button" type="button" hidden>Сбросить досъёмку</button>
         </div>
       </div>
     </section>
@@ -59,7 +42,7 @@
       <div class="catalog-header">
         <div>
           <h2>База деталей</h2>
-          <p class="meta">Фильтр по категориям и последние сканы</p>
+          <p class="meta">Сканы и категории</p>
         </div>
         <button id="catalogClose" class="icon-button" type="button">×</button>
       </div>
