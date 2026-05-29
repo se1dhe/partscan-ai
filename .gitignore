@@ -1,0 +1,84 @@
+# IntelliJ IDEA
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# macOS
+
+.DS_Store
+
+# Gradle
+
+.gradle/
+build/
+**/build/
+
+# Logs
+
+logs/
+*.log
+
+# Environment
+
+.env
+.env.*
+!.env.example
+
+# Railway
+
+.railway/
+
+# Java
+
+*.class
+*.jar
+*.war
+*.ear
+
+# VS Code
+
+.vscode/
+
+# Temporary files
+
+tmp/
+temp/
+*.tmp
+
+# Generated files
+
+out/
+target/
+
+# Uploads
+
+uploads/
+storage/
+
+# OpenAI
+
+openai-cache/
+
+# Node
+
+node_modules/
+
+# Coverage
+
+coverage/
+
+# Flyway
+
+flyway.conf
+
+# Local configs
+
+application-local.yml
+application-dev.yml
+
+# OS
+
+Thumbs.db
+ehthumbs.db
