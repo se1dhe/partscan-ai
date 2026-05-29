@@ -1,2 +1,3 @@
 package app.partscan.dto;
-public record ScanResponse(String status){}
+import app.partscan.entity.Part;
+public record ScanResponse(String status, Part part){}

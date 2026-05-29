@@ -1,0 +1,231 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f2;
+  --panel: #ffffff;
+  --ink: #161814;
+  --muted: #697064;
+  --line: #d9ded5;
+  --accent: #0f7b6c;
+  --accent-ink: #ffffff;
+  --warn: #a65f00;
+  --shadow: 0 16px 40px rgba(30, 34, 27, .12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.app {
+  width: min(960px, 100%);
+  margin: 0 auto;
+  padding: max(14px, env(safe-area-inset-top)) 14px max(24px, env(safe-area-inset-bottom));
+}
+
+.scanner,
+.results {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.scanner { overflow: hidden; }
+.results { margin-top: 14px; padding: 14px; }
+
+.topbar,
+.section-title,
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topbar { padding: 14px; }
+
+h1,
+h2,
+p { margin: 0; }
+
+h1 { font-size: 22px; line-height: 1.1; }
+h2 { font-size: 16px; line-height: 1.2; }
+p, .meta, .hint-list { color: var(--muted); }
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #e8ece5;
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.camera-shell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 72vh;
+  background: #10130f;
+  overflow: hidden;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scan-frame {
+  position: absolute;
+  inset: 11%;
+  border: 1px solid rgba(255,255,255,.32);
+  pointer-events: none;
+}
+
+.scan-frame span {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-color: #fbfcf8;
+}
+
+.scan-frame span:nth-child(1) { left: -1px; top: -1px; border-left: 4px solid; border-top: 4px solid; }
+.scan-frame span:nth-child(2) { right: -1px; top: -1px; border-right: 4px solid; border-top: 4px solid; }
+.scan-frame span:nth-child(3) { right: -1px; bottom: -1px; border-right: 4px solid; border-bottom: 4px solid; }
+.scan-frame span:nth-child(4) { left: -1px; bottom: -1px; border-left: 4px solid; border-bottom: 4px solid; }
+
+.guidance {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(22, 24, 20, .82);
+  color: #fff;
+  text-align: center;
+  font-size: 14px;
+}
+
+.controls { padding: 14px; }
+
+.primary-button,
+.secondary-button {
+  min-height: 48px;
+  border-radius: 8px;
+  padding: 0 18px;
+  font-weight: 700;
+}
+
+.primary-button {
+  flex: 1;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.primary-button:disabled {
+  opacity: .62;
+  cursor: wait;
+}
+
+.secondary-button {
+  background: #e8ece5;
+  color: var(--ink);
+}
+
+.section-title { margin-bottom: 12px; }
+.section-title span {
+  min-width: 32px;
+  height: 28px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #20241e;
+  color: #fff;
+  font-size: 13px;
+}
+
+.parts-list {
+  display: grid;
+  gap: 10px;
+}
+
+.part-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.part-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+}
+
+.part-name {
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.confidence {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.meta {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 100%;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 26px 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11130f;
+    --panel: #1b1f19;
+    --ink: #eef1ea;
+    --muted: #a7afa0;
+    --line: #343b31;
+    --accent: #33b79f;
+    --accent-ink: #07110e;
+    --shadow: none;
+  }
+  .icon-button, .secondary-button { background: #2a3027; }
+  .section-title span { background: #eef1ea; color: #11130f; }
+}

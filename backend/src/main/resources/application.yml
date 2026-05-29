@@ -1,7 +1,21 @@
 spring:
   application:
     name: partscan-ai
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:h2:mem:partscan;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE}}
+    username: ${SPRING_DATASOURCE_USERNAME:${DB_USERNAME:sa}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:}}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+  flyway:
+    enabled: true
+
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
