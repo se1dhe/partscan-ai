@@ -15,6 +15,8 @@ MVP для каталогизации автомобильных деталей 
 ```bash
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.0-flash
 DB_URL=jdbc:postgresql://host:5432/db
 DB_USERNAME=...
 DB_PASSWORD=...
@@ -22,7 +24,7 @@ DB_PASSWORD=...
 
 Без `DB_URL` приложение запускается на in-memory H2, что удобно для локальной проверки.
 На Railway можно также использовать стандартные переменные Postgres-плагина `DATABASE_URL` или `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`.
-Если OpenAI возвращает `insufficient_quota`, нужно пополнить billing или заменить `OPENAI_API_KEY`.
+Если OpenAI возвращает `insufficient_quota`, приложение попробует Gemini fallback при наличии `GEMINI_API_KEY`.
 
 ## Локальный запуск
 

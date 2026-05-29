@@ -1,6 +1,7 @@
 package app.partscan.controller;
 
 import app.partscan.service.OpenAiVisionException;
+import app.partscan.service.GeminiVisionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -21,6 +22,11 @@ public class ApiExceptionHandler {
 
  @ExceptionHandler(OpenAiVisionException.class)
  public ResponseEntity<Map<String, String>> openAiError(OpenAiVisionException exception) {
+  return ResponseEntity.status(exception.getStatus()).body(Map.of("error", exception.getMessage()));
+ }
+
+ @ExceptionHandler(GeminiVisionException.class)
+ public ResponseEntity<Map<String, String>> geminiError(GeminiVisionException exception) {
   return ResponseEntity.status(exception.getStatus()).body(Map.of("error", exception.getMessage()));
  }
 }

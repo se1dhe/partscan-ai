@@ -32,7 +32,7 @@ public class OpenAiVisionService {
   this.model = model;
  }
 
- public AnalysisResult analyze(MultipartFile file) {
+ public VisionAnalysisResult analyze(MultipartFile file) {
   if (!StringUtils.hasText(apiKey)) {
    throw new IllegalStateException("OPENAI_API_KEY is not configured");
   }
@@ -61,7 +61,7 @@ public class OpenAiVisionService {
 
    String json = extractOutputText(response);
    PartAnalysisDto analysis = objectMapper.readValue(json, PartAnalysisDto.class);
-   return new AnalysisResult(analysis, response);
+   return new VisionAnalysisResult(analysis, response, "openai");
   } catch (RestClientResponseException e) {
    throw OpenAiVisionException.from(e, objectMapper);
   } catch (IOException e) {
@@ -122,6 +122,4 @@ public class OpenAiVisionService {
    )
   );
  }
-
- public record AnalysisResult(PartAnalysisDto analysis, String rawResponse) {}
 }

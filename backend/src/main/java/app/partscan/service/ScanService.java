@@ -10,19 +10,30 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class ScanService {
  private final OpenAiVisionService openAiVisionService;
+ private final GeminiVisionService geminiVisionService;
  private final PartRepository partRepository;
  private final ObjectMapper objectMapper;
 
- public ScanService(OpenAiVisionService openAiVisionService, PartRepository partRepository, ObjectMapper objectMapper) {
+ public ScanService(OpenAiVisionService openAiVisionService, GeminiVisionService geminiVisionService, PartRepository partRepository, ObjectMapper objectMapper) {
   this.openAiVisionService = openAiVisionService;
+  this.geminiVisionService = geminiVisionService;
   this.partRepository = partRepository;
   this.objectMapper = objectMapper;
  }
 
  public ScanResponse scan(MultipartFile file) {
-  OpenAiVisionService.AnalysisResult result = openAiVisionService.analyze(file);
+  VisionAnalysisResult result = analyzeWithFallback(file);
   Part part = toPart(result.analysis(), result.rawResponse());
   return new ScanResponse("saved", partRepository.save(part));
+ }
+
+ private VisionAnalysisResult analyzeWithFallback(MultipartFile file) {
+  try {
+   return openAiVisionService.analyze(file);
+  } catch (OpenAiVisionException | IllegalStateException openAiError) {
+   if (!geminiVisionService.isConfigured()) throw openAiError;
+   return geminiVisionService.analyze(file);
+  }
  }
 
  private Part toPart(PartAnalysisDto analysis, String rawResponse) {
