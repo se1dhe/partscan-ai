@@ -4,11 +4,9 @@ import app.partscan.dto.ScanResponse;
 import app.partscan.service.ScanRateLimiterService;
 import app.partscan.service.ScanService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,7 +33,10 @@ public class ScanController {
   String clientKey = clientKey(request);
   if (!rateLimiterService.isAllowed(clientKey)) {
    long retryAfter = rateLimiterService.retryAfterSeconds(clientKey);
-   return ScanResponse.rejected("Слишком частые сканы. Подождите " + retryAfter + " сек.", "Держите деталь в кадре, повторный анализ включится автоматически.");
+   return ScanResponse.rateLimited(
+    "Слишком частые сканы. Подождите " + retryAfter + " сек.",
+    "Держите деталь в кадре, повторный анализ включится автоматически."
+   );
   }
 
   List<MultipartFile> images = new ArrayList<>();
