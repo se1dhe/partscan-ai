@@ -21,21 +21,31 @@
       <div class="camera-shell">
         <video id="camera" autoplay playsinline muted></video>
         <canvas id="frameCanvas" hidden></canvas>
+        <img id="previewImage" class="preview-image" alt="Предпросмотр кадра" hidden>
         <div class="scan-frame">
           <span></span><span></span><span></span><span></span>
+          <div class="scan-crosshair"></div>
         </div>
-        <div id="guidance" class="guidance">Деталь должна занимать центр кадра</div>
+        <div class="camera-badges">
+          <div id="lightBadge" class="camera-badge">Свет: —</div>
+          <div id="sharpBadge" class="camera-badge">Кадр: —</div>
+        </div>
+        <div id="guidance" class="guidance">Поместите деталь целиком в рамку, маркировку — ближе к центру</div>
       </div>
 
       <div class="controls">
         <button id="scanButton" class="primary-button" type="button">Сканировать</button>
+        <button id="retakeButton" class="secondary-button" type="button" hidden>Переснять</button>
         <button id="retryButton" class="secondary-button" type="button">Камера</button>
       </div>
     </section>
 
     <section class="results">
       <div class="section-title">
-        <h2>Последние детали</h2>
+        <div>
+          <h2>База деталей</h2>
+          <p class="meta">Подтверждайте результат — так база будет становиться точнее</p>
+        </div>
         <span id="countLabel">0</span>
       </div>
       <div id="partsList" class="parts-list"></div>
