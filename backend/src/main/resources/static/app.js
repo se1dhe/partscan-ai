@@ -55,10 +55,12 @@ function stopCamera() {
 function startGuidance() {
   if (guidanceTimer) clearInterval(guidanceTimer);
   guidanceTimer = setInterval(() => {
-    if (!video.videoWidth || scanning || !previewImage.hidden) return;
+    if (!video.videoWidth) return;
     const metrics = sampleFrameMetrics();
     updateQualityBadges(metrics);
-    guidance.textContent = guidanceText(metrics);
+    if (!scanning && previewImage.hidden) {
+      guidance.textContent = guidanceText(metrics);
+    }
   }, 650);
 }
 
@@ -141,14 +143,14 @@ async function captureBlob() {
 async function scan() {
   if (scanning) return;
   scanning = true;
+  hidePreview();
   scanButton.disabled = true;
   scanButton.textContent = 'AI анализирует...';
-  statusLabel.textContent = 'Отправляю кадр на AI-анализ';
-  guidance.textContent = 'Проверяю форму, маркировки, разъёмы и похожие варианты';
+  statusLabel.textContent = 'Кадр снят, камера остаётся активной';
+  guidance.textContent = 'Можно держать камеру на детали — AI уже анализирует последний кадр';
 
   try {
     const blob = await captureBlob();
-    showPreview(blob);
     const form = new FormData();
     form.append('file', blob, `part-${Date.now()}.jpg`);
 
@@ -170,8 +172,8 @@ async function scan() {
   } finally {
     scanning = false;
     scanButton.disabled = false;
-    scanButton.textContent = 'Сканировать';
-    retakeButton.hidden = false;
+    scanButton.textContent = 'Сканировать ещё';
+    retakeButton.hidden = true;
   }
 }
 
