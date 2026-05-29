@@ -15,13 +15,15 @@
           <h1>PartScan AI</h1>
           <p id="status">Наведите камеру на деталь</p>
         </div>
-        <button id="refreshButton" class="icon-button" type="button" title="Обновить список" aria-label="Обновить список">↻</button>
+        <button id="catalogToggle" class="catalog-button" type="button">База <span id="countLabel">0</span></button>
       </div>
+
+      <div class="angle-strip" id="angleStrip" hidden></div>
 
       <div class="camera-shell">
         <video id="camera" autoplay playsinline muted></video>
         <canvas id="frameCanvas" hidden></canvas>
-        <img id="previewImage" class="preview-image" alt="Предпросмотр кадра" hidden>
+        <div id="partShapeGuide" class="part-shape-guide shape-main"></div>
         <div class="scan-frame">
           <span></span><span></span><span></span><span></span>
           <div class="scan-crosshair"></div>
@@ -35,21 +37,24 @@
 
       <div class="controls">
         <button id="scanButton" class="primary-button" type="button">Сканировать</button>
-        <button id="retakeButton" class="secondary-button" type="button" hidden>Переснять</button>
+        <button id="multiAngleButton" class="secondary-button" type="button" hidden>Добрать ракурс</button>
+        <button id="finishAnglesButton" class="secondary-button" type="button" hidden>Анализировать ракурсы</button>
+        <button id="resetAnglesButton" class="secondary-button" type="button" hidden>Сброс</button>
         <button id="retryButton" class="secondary-button" type="button">Камера</button>
       </div>
     </section>
 
-    <section class="results">
-      <div class="section-title">
+    <aside id="catalogPanel" class="catalog-panel" hidden>
+      <div class="catalog-header">
         <div>
           <h2>База деталей</h2>
-          <p class="meta">Подтверждайте результат — так база будет становиться точнее</p>
+          <p class="meta">Каталог отдельно от камеры, чтобы не грузить сканер</p>
         </div>
-        <span id="countLabel">0</span>
+        <button id="catalogClose" class="icon-button" type="button">×</button>
       </div>
+      <div id="categoryFilters" class="category-filters"></div>
       <div id="partsList" class="parts-list"></div>
-    </section>
+    </aside>
   </main>
   <script src="/app.js"></script>
 </body>
