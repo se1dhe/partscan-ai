@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -40,20 +41,29 @@ public class OpenAiVisionService {
  }
 
  public VisionAnalysisResult analyze(MultipartFile file) {
+  return analyze(List.of(file));
+ }
+
+ public VisionAnalysisResult analyze(List<MultipartFile> files) {
   if (!isConfigured()) {
    throw new IllegalStateException("OPENAI_API_KEY is not configured");
   }
 
   try {
-   String dataUrl = toDataUrl(file);
+   List<Object> content = new ArrayList<>();
+   content.add(Map.of("type", "input_text", "text", prompt(files.size())));
+   int index = 1;
+   for (MultipartFile file : files) {
+    content.add(Map.of("type", "input_text", "text", "Image " + index + " of " + files.size() + ": analyze this angle as additional evidence."));
+    content.add(Map.of("type", "input_image", "image_url", toDataUrl(file)));
+    index++;
+   }
+
    Map<String, Object> body = Map.of(
     "model", model,
     "input", List.of(Map.of(
      "role", "user",
-     "content", List.of(
-      Map.of("type", "input_text", "text", prompt()),
-      Map.of("type", "input_image", "image_url", dataUrl)
-     )
+     "content", content
     )),
     "text", Map.of("format", schema())
    );
@@ -93,21 +103,24 @@ public class OpenAiVisionService {
   throw new IllegalStateException("OpenAI response did not contain JSON analysis");
  }
 
- private String prompt() {
+ private String prompt(int imageCount) {
   return """
    You are a careful automotive spare parts catalog expert for a workshop and dismantling yard.
-   Analyze only visible evidence in the photo. Do not invent article numbers, brands, vehicle models, or exact fitment.
+   You may receive one image or multiple images of the same part from different angles. Treat all images as the same physical part.
+   If multiple images are provided, combine evidence from all angles and improve the identification only when visible details support it.
+   Analyze only visible evidence. Do not invent article numbers, brands, vehicle models, or exact fitment.
    First identify the generic part type, then look for markings, labels, logos, connectors, ports, shape, material, wear, and context.
    Return Russian text for mechanic-facing fields, but preserve brand names, numbers, codes, and markings exactly as visible.
    normalizedName must be a short generic normalized Russian name, for example: "блок abs", "корпус воздушного фильтра", "охладитель egr".
    articleNumber must be empty when no readable part number is visible.
    compatibleVehicles must contain only cautious likely candidates. If there is no visual evidence, return an empty list.
-   confidence must reflect visible evidence, not guesswork: use below 0.7 when the image does not show markings or the part is ambiguous.
+   confidence must reflect visible evidence, not guesswork. Use below 0.9 unless markings, shape, ports, and context strongly agree.
    needsBetterPhoto must be true when another angle, closer marking photo, or better light is required.
    photoTips must explain what exact extra photo would improve identification.
+   For imageCount=%d, if confidence is below 0.9, photoTips must ask for one of these angles: top view, side view, close-up of marking, close-up of connector/ports, reverse side.
    identificationReason must explain the key visual clues in one concise Russian sentence.
-   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.85 or the part may be confused with another part.
-   """;
+   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.9 or the part may be confused with another part.
+   """.formatted(imageCount);
  }
 
  private Map<String, Object> schema() {
