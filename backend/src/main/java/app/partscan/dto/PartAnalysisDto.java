@@ -3,6 +3,7 @@ package app.partscan.dto;
 import java.util.List;
 
 public record PartAnalysisDto(
+ Boolean automotivePart,
  String name,
  String normalizedName,
  String manufacturer,
