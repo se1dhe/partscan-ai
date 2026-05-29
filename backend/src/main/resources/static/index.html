@@ -10,37 +10,48 @@
 <body>
   <main class="app">
     <section class="scanner">
-      <div class="topbar">
-        <div>
-          <h1>PartScan AI</h1>
-          <p id="status">Наведите камеру на деталь</p>
-        </div>
-        <button id="catalogToggle" class="catalog-button" type="button">База <span id="countLabel">0</span></button>
-      </div>
-
-      <div class="angle-strip" id="angleStrip" hidden></div>
-
       <div class="camera-shell">
         <video id="camera" autoplay playsinline muted></video>
         <canvas id="frameCanvas" hidden></canvas>
-        <div id="partShapeGuide" class="part-shape-guide shape-main"></div>
-        <div class="scan-frame">
-          <span></span><span></span><span></span><span></span>
-          <div class="scan-crosshair"></div>
+
+        <div class="topbar overlay-panel">
+          <div>
+            <h1>PartScan AI</h1>
+            <p id="status">Наведите камеру на деталь</p>
+          </div>
+          <button id="catalogToggle" class="catalog-button" type="button">База <span id="countLabel">0</span></button>
         </div>
+
+        <div id="angleCoach" class="angle-coach overlay-panel">
+          <div class="angle-step-row">
+            <span id="angleStepLabel" class="angle-step-label">Обычный скан</span>
+            <span id="angleProgress" class="angle-progress">1/1</span>
+          </div>
+          <div id="angleTitle" class="angle-title">Деталь целиком</div>
+          <div id="angleHint" class="angle-hint">Поместите всю деталь внутрь пунктирной рамки. Маркировку держите ближе к центру.</div>
+        </div>
+
+        <div id="partShapeGuide" class="part-shape-guide shape-main">
+          <div id="shapeCaption" class="shape-caption">Деталь целиком</div>
+        </div>
+
         <div class="camera-badges">
           <div id="lightBadge" class="camera-badge">Свет: —</div>
           <div id="sharpBadge" class="camera-badge">Кадр: —</div>
         </div>
-        <div id="guidance" class="guidance">Поместите деталь целиком в рамку, маркировку — ближе к центру</div>
-      </div>
 
-      <div class="controls">
-        <button id="scanButton" class="primary-button" type="button">Сканировать</button>
-        <button id="multiAngleButton" class="secondary-button" type="button" hidden>Добрать ракурс</button>
-        <button id="finishAnglesButton" class="secondary-button" type="button" hidden>Анализировать ракурсы</button>
-        <button id="resetAnglesButton" class="secondary-button" type="button" hidden>Сброс</button>
-        <button id="retryButton" class="secondary-button" type="button">Камера</button>
+        <div class="bottom-sheet overlay-panel">
+          <div id="guidance" class="guidance">Держите деталь в рамке и нажмите сканирование.</div>
+          <div id="angleStrip" class="angle-strip" hidden></div>
+          <div class="controls">
+            <button id="scanButton" class="primary-button" type="button">Сканировать</button>
+            <button id="secondaryActionButton" class="secondary-button" type="button" hidden>Добрать ракурсы</button>
+          </div>
+          <div class="mini-actions">
+            <button id="resetAnglesButton" class="ghost-button" type="button" hidden>Сбросить ракурсы</button>
+            <button id="retryButton" class="ghost-button" type="button">Перезапустить камеру</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -48,7 +59,7 @@
       <div class="catalog-header">
         <div>
           <h2>База деталей</h2>
-          <p class="meta">Каталог отдельно от камеры, чтобы не грузить сканер</p>
+          <p class="meta">Фильтр по категориям и последние сканы</p>
         </div>
         <button id="catalogClose" class="icon-button" type="button">×</button>
       </div>
