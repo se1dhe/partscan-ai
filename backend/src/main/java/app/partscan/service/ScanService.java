@@ -35,7 +35,7 @@ public class ScanService {
 
   Part part = toPart(result.analysis(), result.rawResponse());
   Part savedPart = partRepository.save(part);
-  log.info("Scan result saved: partId={}, name={}, confidence={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence());
+  log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus());
 
   return new ScanResponse("saved", savedPart);
  }
@@ -73,23 +73,47 @@ public class ScanService {
 
  private Part toPart(PartAnalysisDto analysis, String rawResponse) {
   Part part = new Part();
-  part.setName(analysis.name());
-  part.setManufacturer(analysis.manufacturer());
-  part.setArticleNumber(analysis.articleNumber());
-  part.setCategory(analysis.category());
-  part.setConfidence(analysis.confidence());
-  part.setDescription(analysis.description());
-  part.setCondition(analysis.condition());
+  part.setName(defaultText(analysis.name(), "Неизвестная деталь"));
+  part.setNormalizedName(defaultText(analysis.normalizedName(), analysis.name()));
+  part.setManufacturer(defaultText(analysis.manufacturer(), "unknown"));
+  part.setArticleNumber(defaultText(analysis.articleNumber(), ""));
+  part.setCategory(defaultText(analysis.category(), "unknown"));
+  part.setConfidence(clampConfidence(analysis.confidence()));
+  part.setDescription(defaultText(analysis.description(), ""));
+  part.setCondition(defaultText(analysis.condition(), "unknown"));
+  part.setNeedsBetterPhoto(Boolean.TRUE.equals(analysis.needsBetterPhoto()));
+  part.setIdentificationReason(defaultText(analysis.identificationReason(), ""));
   part.setVisibleMarkings(toJson(analysis.visibleMarkings()));
   part.setCompatibleVehicles(toJson(analysis.compatibleVehicles()));
   part.setSourceHints(toJson(analysis.sourceHints()));
+  part.setPhotoTips(toJson(analysis.photoTips()));
+  part.setAlternatives(toJson(analysis.alternatives()));
   part.setRawAnalysis(rawResponse);
+  part.setReviewStatus(reviewStatus(analysis));
   return part;
+ }
+
+ private String reviewStatus(PartAnalysisDto analysis) {
+  Double confidence = analysis.confidence();
+  if (Boolean.TRUE.equals(analysis.needsBetterPhoto())) return "needs_photo";
+  if (confidence == null || confidence < 0.72) return "needs_review";
+  return "pending";
+ }
+
+ private Double clampConfidence(Double value) {
+  if (value == null) return 0.0;
+  if (value < 0) return 0.0;
+  if (value > 1) return 1.0;
+  return value;
+ }
+
+ private String defaultText(String value, String fallback) {
+  return value == null || value.isBlank() ? fallback : value;
  }
 
  private String toJson(Object value) {
   try {
-   return objectMapper.writeValueAsString(value);
+   return objectMapper.writeValueAsString(value == null ? java.util.List.of() : value);
   } catch (JsonProcessingException e) {
    throw new IllegalStateException("Could not serialize analysis value", e);
   }
