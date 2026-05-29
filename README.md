@@ -21,6 +21,8 @@ DB_PASSWORD=...
 ```
 
 Без `DB_URL` приложение запускается на in-memory H2, что удобно для локальной проверки.
+На Railway можно также использовать стандартные переменные Postgres-плагина `DATABASE_URL` или `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`.
+Если OpenAI возвращает `insufficient_quota`, нужно пополнить billing или заменить `OPENAI_API_KEY`.
 
 ## Локальный запуск
 

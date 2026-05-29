@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.Base64;
@@ -61,6 +62,8 @@ public class OpenAiVisionService {
    String json = extractOutputText(response);
    PartAnalysisDto analysis = objectMapper.readValue(json, PartAnalysisDto.class);
    return new AnalysisResult(analysis, response);
+  } catch (RestClientResponseException e) {
+   throw OpenAiVisionException.from(e, objectMapper);
   } catch (IOException e) {
    throw new IllegalStateException("Could not analyze uploaded image", e);
   }
@@ -86,9 +89,11 @@ public class OpenAiVisionService {
  private String prompt() {
   return """
    You are helping catalog spare automotive parts from a workshop photo.
-   Identify the part only from visible evidence. If a field is uncertain, use a cautious value like "unknown" and explain useful visible hints.
+   Identify the part only from visible evidence, even when no part number or label is visible.
+   If a field is uncertain, use a cautious value like "unknown"; articleNumber may be an empty string when no number is visible.
    Return compact Russian text where it helps the mechanic, but keep brand names and part numbers exactly as seen.
    Estimate confidence from 0 to 1. Compatible vehicles must be likely candidates, not guarantees.
+   Prefer useful generic identification over refusing: for example "brake caliper", "engine mount", "ABS sensor", "air duct", "suspension arm".
    """;
  }
 

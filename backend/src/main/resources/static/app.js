@@ -65,12 +65,15 @@ function sampleBrightness() {
 }
 
 async function captureBlob() {
-  const width = video.videoWidth || 1280;
-  const height = video.videoHeight || 720;
+  const sourceWidth = video.videoWidth || 1280;
+  const sourceHeight = video.videoHeight || 720;
+  const scale = Math.min(1, 1280 / Math.max(sourceWidth, sourceHeight));
+  const width = Math.round(sourceWidth * scale);
+  const height = Math.round(sourceHeight * scale);
   canvas.width = width;
   canvas.height = height;
   canvas.getContext('2d').drawImage(video, 0, 0, width, height);
-  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
 }
 
 async function scan() {
