@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Map;
@@ -26,6 +27,12 @@ public class ApiExceptionHandler {
  public ResponseEntity<Map<String, String>> failedDependency(IllegalStateException exception) {
   log.warn("Application dependency is unavailable: message={}", exception.getMessage());
   return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", exception.getMessage()));
+ }
+
+ @ExceptionHandler(ResponseStatusException.class)
+ public ResponseEntity<Map<String, String>> responseStatus(ResponseStatusException exception) {
+  log.warn("Request failed with response status: status={}, reason={}", exception.getStatusCode(), exception.getReason());
+  return ResponseEntity.status(exception.getStatusCode()).body(Map.of("error", exception.getReason() == null ? "Request failed" : exception.getReason()));
  }
 
  @ExceptionHandler(NoResourceFoundException.class)
