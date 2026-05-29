@@ -37,13 +37,22 @@ public class ScanService {
   log.info("Scan started: images={}, totalSize={} bytes", files.size(), totalSize(files));
 
   VisionAnalysisResult result = analyzeWithFallback(files);
-  log.info("Scan analysis completed: provider={}, images={}", result.provider(), files.size());
+  PartAnalysisDto analysis = result.analysis();
+  log.info("Scan analysis completed: provider={}, images={}, automotivePart={}, confidence={}", result.provider(), files.size(), analysis.automotivePart(), analysis.confidence());
 
-  Part part = toPart(result.analysis(), result.rawResponse());
+  if (!Boolean.TRUE.equals(analysis.automotivePart())) {
+   log.info("Scan rejected as non automotive part: name={}, reason={}", analysis.name(), analysis.identificationReason());
+   return ScanResponse.rejected(
+    defaultText(analysis.identificationReason(), "В кадре не похожая на автодеталь вещь. В базу не сохраняю."),
+    firstTip(analysis.photoTips())
+   );
+  }
+
+  Part part = toPart(analysis, result.rawResponse());
   Part savedPart = partRepository.save(part);
   log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus());
 
-  return new ScanResponse("saved", savedPart);
+  return ScanResponse.saved(savedPart);
  }
 
  private VisionAnalysisResult analyzeWithFallback(List<MultipartFile> files) {
@@ -133,6 +142,10 @@ public class ScanService {
 
  private String defaultText(String value, String fallback) {
   return value == null || value.isBlank() ? fallback : value;
+ }
+
+ private String firstTip(List<String> tips) {
+  return tips == null || tips.isEmpty() ? "Наведите камеру на автодеталь целиком." : tips.get(0);
  }
 
  private String toJson(Object value) {
