@@ -1,4 +1,5 @@
 package app.partscan.service;
+
 import app.partscan.dto.PartAnalysisDto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,10 +10,12 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+
 @Service
 public class OpenAiVisionService {
  private final RestClient restClient;
@@ -88,17 +91,34 @@ public class OpenAiVisionService {
 
  private String prompt() {
   return """
-   You are helping catalog spare automotive parts from a workshop photo.
-   Identify the part only from visible evidence, even when no part number or label is visible.
-   If a field is uncertain, use a cautious value like "unknown"; articleNumber may be an empty string when no number is visible.
-   Return compact Russian text where it helps the mechanic, but keep brand names and part numbers exactly as seen.
-   Estimate confidence from 0 to 1. Compatible vehicles must be likely candidates, not guarantees.
-   Prefer useful generic identification over refusing: for example "brake caliper", "engine mount", "ABS sensor", "air duct", "suspension arm".
+   You are a careful automotive spare parts catalog expert for a workshop and dismantling yard.
+   Analyze only visible evidence in the photo. Do not invent article numbers, brands, vehicle models, or exact fitment.
+   First identify the generic part type, then look for markings, labels, logos, connectors, ports, shape, material, wear, and context.
+   Return Russian text for mechanic-facing fields, but preserve brand names, numbers, codes, and markings exactly as visible.
+   normalizedName must be a short generic normalized Russian name, for example: "блок abs", "корпус воздушного фильтра", "охладитель egr".
+   articleNumber must be empty when no readable part number is visible.
+   compatibleVehicles must contain only cautious likely candidates. If there is no visual evidence, return an empty list.
+   confidence must reflect visible evidence, not guesswork: use below 0.7 when the image does not show markings or the part is ambiguous.
+   needsBetterPhoto must be true when another angle, closer marking photo, or better light is required.
+   photoTips must explain what exact extra photo would improve identification.
+   identificationReason must explain the key visual clues in one concise Russian sentence.
+   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.85 or the part may be confused with another part.
    """;
  }
 
  private Map<String, Object> schema() {
   Map<String, Object> stringArray = Map.of("type", "array", "items", Map.of("type", "string"));
+  Map<String, Object> alternative = Map.of(
+   "type", "object",
+   "additionalProperties", false,
+   "required", List.of("name", "confidence", "reason"),
+   "properties", Map.of(
+    "name", Map.of("type", "string"),
+    "confidence", Map.of("type", "number", "minimum", 0, "maximum", 1),
+    "reason", Map.of("type", "string")
+   )
+  );
+
   return Map.of(
    "type", "json_schema",
    "name", "part_analysis",
@@ -106,18 +126,26 @@ public class OpenAiVisionService {
    "schema", Map.of(
     "type", "object",
     "additionalProperties", false,
-    "required", List.of("name", "manufacturer", "articleNumber", "category", "confidence", "description", "condition", "visibleMarkings", "compatibleVehicles", "sourceHints"),
-    "properties", Map.of(
-     "name", Map.of("type", "string"),
-     "manufacturer", Map.of("type", "string"),
-     "articleNumber", Map.of("type", "string"),
-     "category", Map.of("type", "string"),
-     "confidence", Map.of("type", "number", "minimum", 0, "maximum", 1),
-     "description", Map.of("type", "string"),
-     "condition", Map.of("type", "string"),
-     "visibleMarkings", stringArray,
-     "compatibleVehicles", stringArray,
-     "sourceHints", stringArray
+    "required", List.of(
+     "name", "normalizedName", "manufacturer", "articleNumber", "category", "confidence", "description", "condition",
+     "needsBetterPhoto", "identificationReason", "visibleMarkings", "compatibleVehicles", "sourceHints", "photoTips", "alternatives"
+    ),
+    "properties", Map.ofEntries(
+     Map.entry("name", Map.of("type", "string")),
+     Map.entry("normalizedName", Map.of("type", "string")),
+     Map.entry("manufacturer", Map.of("type", "string")),
+     Map.entry("articleNumber", Map.of("type", "string")),
+     Map.entry("category", Map.of("type", "string")),
+     Map.entry("confidence", Map.of("type", "number", "minimum", 0, "maximum", 1)),
+     Map.entry("description", Map.of("type", "string")),
+     Map.entry("condition", Map.of("type", "string")),
+     Map.entry("needsBetterPhoto", Map.of("type", "boolean")),
+     Map.entry("identificationReason", Map.of("type", "string")),
+     Map.entry("visibleMarkings", stringArray),
+     Map.entry("compatibleVehicles", stringArray),
+     Map.entry("sourceHints", stringArray),
+     Map.entry("photoTips", stringArray),
+     Map.entry("alternatives", Map.of("type", "array", "items", alternative))
     )
    )
   );
