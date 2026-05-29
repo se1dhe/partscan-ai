@@ -3,17 +3,51 @@ plugins {
  id 'org.springframework.boot' version '3.5.0'
  id 'io.spring.dependency-management' version '1.1.7'
 }
-group='app.partscan'
-version='0.3.0'
-repositories { mavenCentral() }
+
+group = 'app.partscan'
+version = '0.3.0'
+
+java {
+ toolchain {
+  languageVersion = JavaLanguageVersion.of(21)
+ }
+}
+
+repositories {
+ mavenCentral()
+}
+
 dependencies {
+ // Web API / REST
  implementation 'org.springframework.boot:spring-boot-starter-web'
+
+ // JPA / Hibernate
  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+ // Валидация DTO / request body
  implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+ // Flyway core
  implementation 'org.flywaydb:flyway-core'
+
+ // ВАЖНО:
+ // Отдельный модуль Flyway для PostgreSQL.
+ // Без него Flyway может падать с ошибкой:
+ // Unsupported Database: PostgreSQL 18.4
+ implementation 'org.flywaydb:flyway-database-postgresql'
+
+ // Локальная dev-база, если используешь H2
  runtimeOnly 'com.h2database:h2'
+
+ // PostgreSQL драйвер
  runtimeOnly 'org.postgresql:postgresql'
+
+ // Тесты
  testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+ useJUnitPlatform()
 }
 
 bootJar {
