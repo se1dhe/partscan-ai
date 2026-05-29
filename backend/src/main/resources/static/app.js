@@ -5,8 +5,7 @@ tg?.expand();
 const video = document.getElementById('camera');
 const canvas = document.getElementById('frameCanvas');
 const scanButton = document.getElementById('scanButton');
-const multiAngleButton = document.getElementById('multiAngleButton');
-const finishAnglesButton = document.getElementById('finishAnglesButton');
+const secondaryActionButton = document.getElementById('secondaryActionButton');
 const resetAnglesButton = document.getElementById('resetAnglesButton');
 const retryButton = document.getElementById('retryButton');
 const catalogToggle = document.getElementById('catalogToggle');
@@ -15,6 +14,11 @@ const catalogClose = document.getElementById('catalogClose');
 const categoryFilters = document.getElementById('categoryFilters');
 const angleStrip = document.getElementById('angleStrip');
 const partShapeGuide = document.getElementById('partShapeGuide');
+const shapeCaption = document.getElementById('shapeCaption');
+const angleStepLabel = document.getElementById('angleStepLabel');
+const angleProgress = document.getElementById('angleProgress');
+const angleTitle = document.getElementById('angleTitle');
+const angleHint = document.getElementById('angleHint');
 const guidance = document.getElementById('guidance');
 const statusLabel = document.getElementById('status');
 const partsList = document.getElementById('partsList');
@@ -23,11 +27,42 @@ const lightBadge = document.getElementById('lightBadge');
 const sharpBadge = document.getElementById('sharpBadge');
 
 const angleSteps = [
-  { key: 'main', label: 'Общий вид', shape: 'shape-main', hint: 'Деталь целиком в рамке, главная форма по центру' },
-  { key: 'top', label: 'Верх', shape: 'shape-top', hint: 'Покажите верхнюю плоскость, крышки, трубки и крепления' },
-  { key: 'side', label: 'Сбоку', shape: 'shape-side', hint: 'Поверните деталь боком, чтобы были видны патрубки и глубина' },
-  { key: 'marking', label: 'Маркировка', shape: 'shape-marking', hint: 'Поднесите номер, наклейку, логотип или отливку в пунктир' },
-  { key: 'ports', label: 'Разъёмы', shape: 'shape-ports', hint: 'Покажите фишки, разъёмы, отверстия или посадочные места' }
+  {
+    key: 'main',
+    label: 'Общий вид',
+    short: 'Целиком',
+    shape: 'shape-main',
+    title: 'Снимите деталь целиком',
+    hint: 'Отойдите чуть дальше. В рамке должны быть видны общая форма, крепления, трубки и края детали.',
+    caption: 'Вся деталь'
+  },
+  {
+    key: 'marking',
+    label: 'Маркировка',
+    short: 'Номер',
+    shape: 'shape-marking',
+    title: 'Найдите номер или логотип',
+    hint: 'Поднесите наклейку, выбитый номер, QR, штамп или логотип прямо в маленькую рамку. Это самый важный ракурс.',
+    caption: 'Номер / логотип'
+  },
+  {
+    key: 'side',
+    label: 'Боковой вид',
+    short: 'Сбоку',
+    shape: 'shape-side',
+    title: 'Поверните деталь боком',
+    hint: 'Покажите толщину, патрубки, изгибы, посадочные места и боковые крепления.',
+    caption: 'Бок / глубина'
+  },
+  {
+    key: 'ports',
+    label: 'Разъёмы',
+    short: 'Разъёмы',
+    shape: 'shape-ports',
+    title: 'Покажите разъёмы и отверстия',
+    hint: 'Наведите камеру на фишки, контакты, штуцеры, отверстия, трубки или места подключения.',
+    caption: 'Разъёмы / порты'
+  }
 ];
 
 let stream;
@@ -42,7 +77,7 @@ let selectedCategory = 'all';
 async function startCamera() {
   stopCamera();
   statusLabel.textContent = 'Запрашиваю камеру';
-  guidance.textContent = 'Разрешите доступ к камере и покажите деталь целиком';
+  guidance.textContent = 'Разрешите доступ к камере и покажите деталь.';
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -57,11 +92,11 @@ async function startCamera() {
     await video.play();
     statusLabel.textContent = 'Камера готова';
     scanButton.disabled = false;
+    showDefaultCoach();
     startGuidance();
-    renderAngleStrip();
   } catch (error) {
     statusLabel.textContent = 'Нет доступа к камере';
-    guidance.textContent = 'Откройте приложение по HTTPS и разрешите доступ к камере';
+    guidance.textContent = 'Откройте приложение по HTTPS и разрешите доступ к камере.';
     scanButton.disabled = true;
   }
 }
@@ -78,13 +113,13 @@ function startGuidance() {
     const metrics = sampleFrameMetrics();
     updateQualityBadges(metrics);
     if (!scanning && !angleMode) guidance.textContent = guidanceText(metrics);
-  }, 650);
+  }, 700);
 }
 
 function sampleFrameMetrics() {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  canvas.width = 64;
-  canvas.height = 64;
+  canvas.width = 56;
+  canvas.height = 56;
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
   let brightnessSum = 0;
@@ -112,7 +147,7 @@ function setBadge(element, text, className) {
 
 function qualityLightLabel(brightness) {
   if (brightness < 48) return 'темно';
-  if (brightness > 218) return 'пересвет';
+  if (brightness > 218) return 'блик';
   return 'ок';
 }
 
@@ -123,9 +158,9 @@ function qualityLightClass(brightness) {
 }
 
 function qualitySharpLabel(contrast) {
-  if (contrast < 7) return 'мало деталей';
+  if (contrast < 7) return 'ближе';
   if (contrast < 13) return 'средне';
-  return 'чёткий';
+  return 'чётко';
 }
 
 function qualitySharpClass(contrast) {
@@ -135,17 +170,17 @@ function qualitySharpClass(contrast) {
 }
 
 function guidanceText(metrics) {
-  if (metrics.brightness < 48) return 'Темно: добавьте свет или поднесите деталь к окну';
-  if (metrics.brightness > 218) return 'Пересвет: измените угол, чтобы маркировка не бликовала';
-  if (metrics.contrast < 7) return 'Поднесите камеру ближе к маркировке или ребрам детали';
-  if (metrics.contrast < 13) return 'Хорошо. Для точности покажите номер, логотип или разъёмы';
-  return 'Отличный кадр. Деталь целиком в рамке, маркировка — по центру';
+  if (metrics.brightness < 48) return 'Темно. Добавьте свет или поверните деталь к источнику света.';
+  if (metrics.brightness > 218) return 'Есть блик. Наклоните деталь, чтобы номер не светился белым пятном.';
+  if (metrics.contrast < 7) return 'Поднесите камеру ближе к детали или наведите на маркировку.';
+  if (metrics.contrast < 13) return 'Нормально. Для лучшей точности покажите номер или разъёмы.';
+  return 'Кадр хороший. Нажмите сканирование.';
 }
 
 async function captureBlob() {
   const sourceWidth = video.videoWidth || 1280;
   const sourceHeight = video.videoHeight || 720;
-  const scale = Math.min(1, 1600 / Math.max(sourceWidth, sourceHeight));
+  const scale = Math.min(1, 1500 / Math.max(sourceWidth, sourceHeight));
   const width = Math.round(sourceWidth * scale);
   const height = Math.round(sourceHeight * scale);
   canvas.width = width;
@@ -166,9 +201,9 @@ async function submitScan(blobs) {
   if (scanning) return;
   scanning = true;
   scanButton.disabled = true;
-  finishAnglesButton.disabled = true;
-  statusLabel.textContent = blobs.length > 1 ? `Анализирую ${blobs.length} ракурсов` : 'Кадр снят, камера остаётся активной';
-  guidance.textContent = blobs.length > 1 ? 'AI сравнивает форму, маркировки и разъёмы с разных сторон' : 'Можно держать камеру на детали — AI уже анализирует последний кадр';
+  secondaryActionButton.disabled = true;
+  statusLabel.textContent = blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализ кадра';
+  guidance.textContent = blobs.length > 1 ? 'AI сравнивает несколько сторон одной детали.' : 'Камера остаётся живой. Анализируется последний кадр.';
 
   try {
     const form = new FormData();
@@ -192,23 +227,44 @@ async function submitScan(blobs) {
   } finally {
     scanning = false;
     scanButton.disabled = false;
-    finishAnglesButton.disabled = false;
-    scanButton.textContent = angleMode ? 'Снять ракурс' : 'Сканировать ещё';
+    secondaryActionButton.disabled = false;
+    updatePrimaryButton();
   }
 }
 
 function handleScanResult(part) {
   const confidence = part?.confidence || 0;
-  statusLabel.textContent = part?.name ? `${part.name} · ${Math.round(confidence * 100)}%` : 'Деталь сохранена';
+  const percent = Math.round(confidence * 100);
+  statusLabel.textContent = part?.name ? `${part.name} · ${percent}%` : 'Деталь сохранена';
+
   if (confidence < 0.9 || part?.needsBetterPhoto) {
-    guidance.textContent = 'Точность ниже 90%. Включите добор ракурсов: верх, бок, маркировка и разъёмы';
-    multiAngleButton.hidden = false;
-    setShape('shape-marking');
+    guidance.textContent = `Точность ${percent}%. Нужно доснять несколько понятных ракурсов.`;
+    secondaryActionButton.hidden = false;
+    secondaryActionButton.textContent = 'Начать досъёмку';
+    secondaryActionButton.onclick = enterAngleMode;
+    showLowConfidenceCoach(percent);
   } else {
-    guidance.textContent = 'Точность выше 90%. Можно подтверждать в базе или сканировать следующую деталь';
-    multiAngleButton.hidden = true;
-    resetAngleMode();
+    guidance.textContent = 'Точность хорошая. Можно подтвердить в базе или сканировать следующую деталь.';
+    secondaryActionButton.hidden = true;
+    resetAngleMode(false);
+    showDefaultCoach();
   }
+}
+
+function showDefaultCoach() {
+  angleStepLabel.textContent = 'Обычный скан';
+  angleProgress.textContent = '1/1';
+  angleTitle.textContent = 'Деталь целиком';
+  angleHint.textContent = 'Поместите всю деталь внутрь пунктирной рамки. Маркировку держите ближе к центру.';
+  setShape('shape-main', 'Вся деталь');
+}
+
+function showLowConfidenceCoach(percent) {
+  angleStepLabel.textContent = 'Нужны ракурсы';
+  angleProgress.textContent = `${percent}%`;
+  angleTitle.textContent = 'AI не уверен';
+  angleHint.textContent = 'Нажмите “Начать досъёмку”. Приложение по шагам покажет, что именно снять.';
+  setShape('shape-marking', 'Номер или логотип');
 }
 
 function enterAngleMode() {
@@ -216,70 +272,85 @@ function enterAngleMode() {
   capturedAngles = [];
   currentAngleIndex = 0;
   angleStrip.hidden = false;
-  multiAngleButton.hidden = true;
-  finishAnglesButton.hidden = false;
   resetAnglesButton.hidden = false;
-  scanButton.textContent = 'Снять ракурс';
+  secondaryActionButton.hidden = false;
+  secondaryActionButton.textContent = 'Готово, анализировать';
+  secondaryActionButton.onclick = finishAngles;
   updateAngleGuide();
+  updatePrimaryButton();
 }
 
 async function captureAngle() {
   if (capturedAngles.length >= angleSteps.length) return;
   const blob = await captureBlob();
   capturedAngles.push(blob);
-  currentAngleIndex = Math.min(capturedAngles.length, angleSteps.length - 1);
-  renderAngleStrip();
   tg?.HapticFeedback?.impactOccurred('light');
-  if (capturedAngles.length >= 2) finishAnglesButton.hidden = false;
-  if (capturedAngles.length === angleSteps.length) {
-    guidance.textContent = 'Все ракурсы сняты. Нажмите “Анализировать ракурсы”';
+
+  if (capturedAngles.length >= angleSteps.length) {
+    currentAngleIndex = angleSteps.length - 1;
+    guidance.textContent = 'Все ракурсы сняты. Нажмите “Готово, анализировать”.';
     scanButton.disabled = true;
   } else {
+    currentAngleIndex = capturedAngles.length;
     updateAngleGuide();
   }
+  renderAngleStrip();
+  updatePrimaryButton();
 }
 
 async function finishAngles() {
   if (capturedAngles.length < 2) {
-    guidance.textContent = 'Нужно минимум 2 ракурса для уточнения';
+    guidance.textContent = 'Снимите минимум 2 ракурса: общий вид и маркировку.';
     return;
   }
-  await submitScan(capturedAngles);
-  resetAngleMode();
+  const blobs = [...capturedAngles];
+  resetAngleMode(false);
+  await submitScan(blobs);
 }
 
-function resetAngleMode() {
+function resetAngleMode(hideSecondary = true) {
   angleMode = false;
   capturedAngles = [];
   currentAngleIndex = 0;
   angleStrip.hidden = true;
-  multiAngleButton.hidden = true;
-  finishAnglesButton.hidden = true;
   resetAnglesButton.hidden = true;
   scanButton.disabled = false;
-  scanButton.textContent = 'Сканировать ещё';
-  setShape('shape-main');
+  if (hideSecondary) secondaryActionButton.hidden = true;
+  showDefaultCoach();
+  updatePrimaryButton();
 }
 
 function updateAngleGuide() {
   const step = angleSteps[currentAngleIndex];
-  setShape(step.shape);
-  statusLabel.textContent = `Ракурс ${currentAngleIndex + 1}/${angleSteps.length}: ${step.label}`;
+  angleStepLabel.textContent = `Ракурс ${currentAngleIndex + 1}`;
+  angleProgress.textContent = `${capturedAngles.length}/${angleSteps.length}`;
+  angleTitle.textContent = step.title;
+  angleHint.textContent = step.hint;
   guidance.textContent = step.hint;
+  setShape(step.shape, step.caption);
   renderAngleStrip();
 }
 
 function renderAngleStrip() {
-  if (!angleStrip) return;
   angleStrip.innerHTML = angleSteps.map((step, index) => {
     const done = index < capturedAngles.length;
     const active = index === currentAngleIndex && angleMode;
-    return `<div class="angle-chip ${done ? 'done' : ''} ${active ? 'active' : ''}">${done ? '✓ ' : ''}${escapeHtml(step.label)}</div>`;
+    return `<div class="angle-chip ${done ? 'done' : ''} ${active ? 'active' : ''}">${done ? '✓ ' : ''}${escapeHtml(step.short)}</div>`;
   }).join('');
 }
 
-function setShape(shapeClass) {
+function updatePrimaryButton() {
+  if (!angleMode) {
+    scanButton.textContent = 'Сканировать';
+    return;
+  }
+  const step = angleSteps[currentAngleIndex];
+  scanButton.textContent = `Снять: ${step.short}`;
+}
+
+function setShape(shapeClass, caption) {
   partShapeGuide.className = `part-shape-guide ${shapeClass}`;
+  shapeCaption.textContent = caption || '';
 }
 
 async function readJsonResponse(response) {
@@ -397,9 +468,7 @@ window.confirmPart = confirmPart;
 window.quickEditPart = quickEditPart;
 
 scanButton.addEventListener('click', scan);
-multiAngleButton.addEventListener('click', enterAngleMode);
-finishAnglesButton.addEventListener('click', finishAngles);
-resetAnglesButton.addEventListener('click', resetAngleMode);
+resetAnglesButton.addEventListener('click', () => resetAngleMode(true));
 retryButton.addEventListener('click', startCamera);
 catalogToggle.addEventListener('click', () => toggleCatalog());
 catalogClose.addEventListener('click', () => toggleCatalog(false));
