@@ -11,6 +11,10 @@ public record ScanResponse(String status, Part part, String message, String next
   return new ScanResponse("rejected", null, message, nextAction);
  }
 
+ public static ScanResponse rateLimited(String message, String nextAction) {
+  return new ScanResponse("rate_limited", null, message, nextAction);
+ }
+
  public static ScanResponse saved(Part part) {
   return new ScanResponse("saved", part, null, null);
  }
