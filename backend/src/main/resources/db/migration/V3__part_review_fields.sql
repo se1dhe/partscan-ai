@@ -1,0 +1,10 @@
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS normalized_name VARCHAR(255);
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS needs_better_photo BOOLEAN DEFAULT FALSE;
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS identification_reason TEXT;
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS photo_tips TEXT;
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS alternatives TEXT;
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) DEFAULT 'pending';
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_parts_review_status ON parts(review_status);
+CREATE INDEX IF NOT EXISTS idx_parts_normalized_name ON parts(normalized_name);
