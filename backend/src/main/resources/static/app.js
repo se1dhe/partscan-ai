@@ -79,25 +79,40 @@ async function captureBlob() {
 async function scan() {
   scanButton.disabled = true;
   scanButton.textContent = 'Сканирую...';
-  statusLabel.textContent = 'Отправляю кадр в OpenAI';
+  statusLabel.textContent = 'Отправляю кадр на AI-анализ';
+  guidance.textContent = 'Проверяю фото и пытаюсь распознать деталь';
+
   try {
     const blob = await captureBlob();
     const form = new FormData();
     form.append('file', blob, `part-${Date.now()}.jpg`);
+
     const response = await fetch('/api/v1/scan', { method: 'POST', body: form });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Ошибка сканирования');
+    const payload = await readJsonResponse(response);
+
+    if (!response.ok) {
+      throw new Error(payload.error || payload.detail || payload.message || 'Ошибка сканирования');
+    }
+
     statusLabel.textContent = 'Деталь сохранена';
     guidance.textContent = payload.part?.name || 'Можно сканировать следующую деталь';
     await loadParts();
     tg?.HapticFeedback?.notificationOccurred('success');
   } catch (error) {
     statusLabel.textContent = 'Не удалось распознать';
-    guidance.textContent = error.message;
+    guidance.textContent = error.message || 'Неизвестная ошибка сканирования';
     tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
     scanButton.disabled = false;
     scanButton.textContent = 'Сканировать';
+  }
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
   }
 }
 
