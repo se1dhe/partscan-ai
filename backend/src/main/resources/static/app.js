@@ -4,11 +4,17 @@ tg?.expand();
 
 const video = document.getElementById('camera');
 const canvas = document.getElementById('frameCanvas');
-const previewImage = document.getElementById('previewImage');
 const scanButton = document.getElementById('scanButton');
-const retakeButton = document.getElementById('retakeButton');
+const multiAngleButton = document.getElementById('multiAngleButton');
+const finishAnglesButton = document.getElementById('finishAnglesButton');
+const resetAnglesButton = document.getElementById('resetAnglesButton');
 const retryButton = document.getElementById('retryButton');
-const refreshButton = document.getElementById('refreshButton');
+const catalogToggle = document.getElementById('catalogToggle');
+const catalogPanel = document.getElementById('catalogPanel');
+const catalogClose = document.getElementById('catalogClose');
+const categoryFilters = document.getElementById('categoryFilters');
+const angleStrip = document.getElementById('angleStrip');
+const partShapeGuide = document.getElementById('partShapeGuide');
 const guidance = document.getElementById('guidance');
 const statusLabel = document.getElementById('status');
 const partsList = document.getElementById('partsList');
@@ -16,13 +22,25 @@ const countLabel = document.getElementById('countLabel');
 const lightBadge = document.getElementById('lightBadge');
 const sharpBadge = document.getElementById('sharpBadge');
 
+const angleSteps = [
+  { key: 'main', label: 'Общий вид', shape: 'shape-main', hint: 'Деталь целиком в рамке, главная форма по центру' },
+  { key: 'top', label: 'Верх', shape: 'shape-top', hint: 'Покажите верхнюю плоскость, крышки, трубки и крепления' },
+  { key: 'side', label: 'Сбоку', shape: 'shape-side', hint: 'Поверните деталь боком, чтобы были видны патрубки и глубина' },
+  { key: 'marking', label: 'Маркировка', shape: 'shape-marking', hint: 'Поднесите номер, наклейку, логотип или отливку в пунктир' },
+  { key: 'ports', label: 'Разъёмы', shape: 'shape-ports', hint: 'Покажите фишки, разъёмы, отверстия или посадочные места' }
+];
+
 let stream;
 let guidanceTimer;
 let scanning = false;
+let angleMode = false;
+let capturedAngles = [];
+let currentAngleIndex = 0;
+let allParts = [];
+let selectedCategory = 'all';
 
 async function startCamera() {
   stopCamera();
-  hidePreview();
   statusLabel.textContent = 'Запрашиваю камеру';
   guidance.textContent = 'Разрешите доступ к камере и покажите деталь целиком';
   try {
@@ -40,6 +58,7 @@ async function startCamera() {
     statusLabel.textContent = 'Камера готова';
     scanButton.disabled = false;
     startGuidance();
+    renderAngleStrip();
   } catch (error) {
     statusLabel.textContent = 'Нет доступа к камере';
     guidance.textContent = 'Откройте приложение по HTTPS и разрешите доступ к камере';
@@ -58,9 +77,7 @@ function startGuidance() {
     if (!video.videoWidth) return;
     const metrics = sampleFrameMetrics();
     updateQualityBadges(metrics);
-    if (!scanning && previewImage.hidden) {
-      guidance.textContent = guidanceText(metrics);
-    }
+    if (!scanning && !angleMode) guidance.textContent = guidanceText(metrics);
   }, 650);
 }
 
@@ -80,10 +97,7 @@ function sampleFrameMetrics() {
     previous = value;
   }
   const pixels = data.length / 4;
-  return {
-    brightness: brightnessSum / pixels,
-    contrast: contrastSum / pixels
-  };
+  return { brightness: brightnessSum / pixels, contrast: contrastSum / pixels };
 }
 
 function updateQualityBadges(metrics) {
@@ -141,29 +155,35 @@ async function captureBlob() {
 }
 
 async function scan() {
+  if (angleMode) {
+    await captureAngle();
+    return;
+  }
+  await submitScan([await captureBlob()]);
+}
+
+async function submitScan(blobs) {
   if (scanning) return;
   scanning = true;
-  hidePreview();
   scanButton.disabled = true;
-  scanButton.textContent = 'AI анализирует...';
-  statusLabel.textContent = 'Кадр снят, камера остаётся активной';
-  guidance.textContent = 'Можно держать камеру на детали — AI уже анализирует последний кадр';
+  finishAnglesButton.disabled = true;
+  statusLabel.textContent = blobs.length > 1 ? `Анализирую ${blobs.length} ракурсов` : 'Кадр снят, камера остаётся активной';
+  guidance.textContent = blobs.length > 1 ? 'AI сравнивает форму, маркировки и разъёмы с разных сторон' : 'Можно держать камеру на детали — AI уже анализирует последний кадр';
 
   try {
-    const blob = await captureBlob();
     const form = new FormData();
-    form.append('file', blob, `part-${Date.now()}.jpg`);
+    if (blobs.length === 1) {
+      form.append('file', blobs[0], `part-${Date.now()}.jpg`);
+    } else {
+      blobs.forEach((blob, index) => form.append('files', blob, `part-angle-${index + 1}.jpg`));
+    }
 
     const response = await fetch('/api/v1/scan', { method: 'POST', body: form });
     const payload = await readJsonResponse(response);
+    if (!response.ok) throw new Error(payload.error || payload.detail || payload.message || 'Ошибка сканирования');
 
-    if (!response.ok) {
-      throw new Error(payload.error || payload.detail || payload.message || 'Ошибка сканирования');
-    }
-
-    statusLabel.textContent = 'Деталь сохранена';
-    guidance.textContent = resultGuidance(payload.part);
     await loadParts();
+    handleScanResult(payload.part);
     tg?.HapticFeedback?.notificationOccurred('success');
   } catch (error) {
     statusLabel.textContent = 'Не удалось распознать';
@@ -172,43 +192,127 @@ async function scan() {
   } finally {
     scanning = false;
     scanButton.disabled = false;
-    scanButton.textContent = 'Сканировать ещё';
-    retakeButton.hidden = true;
+    finishAnglesButton.disabled = false;
+    scanButton.textContent = angleMode ? 'Снять ракурс' : 'Сканировать ещё';
   }
 }
 
-function showPreview(blob) {
-  const url = URL.createObjectURL(blob);
-  previewImage.src = url;
-  previewImage.hidden = false;
-  retakeButton.hidden = false;
+function handleScanResult(part) {
+  const confidence = part?.confidence || 0;
+  statusLabel.textContent = part?.name ? `${part.name} · ${Math.round(confidence * 100)}%` : 'Деталь сохранена';
+  if (confidence < 0.9 || part?.needsBetterPhoto) {
+    guidance.textContent = 'Точность ниже 90%. Включите добор ракурсов: верх, бок, маркировка и разъёмы';
+    multiAngleButton.hidden = false;
+    setShape('shape-marking');
+  } else {
+    guidance.textContent = 'Точность выше 90%. Можно подтверждать в базе или сканировать следующую деталь';
+    multiAngleButton.hidden = true;
+    resetAngleMode();
+  }
 }
 
-function hidePreview() {
-  previewImage.hidden = true;
-  previewImage.removeAttribute('src');
-  retakeButton.hidden = true;
+function enterAngleMode() {
+  angleMode = true;
+  capturedAngles = [];
+  currentAngleIndex = 0;
+  angleStrip.hidden = false;
+  multiAngleButton.hidden = true;
+  finishAnglesButton.hidden = false;
+  resetAnglesButton.hidden = false;
+  scanButton.textContent = 'Снять ракурс';
+  updateAngleGuide();
 }
 
-function resultGuidance(part) {
-  if (!part) return 'Можно сканировать следующую деталь';
-  if (part.needsBetterPhoto) return 'AI просит дополнительный кадр: покажите маркировку или другой угол';
-  return `${part.name || 'Деталь'} сохранена. Подтвердите результат в базе ниже`;
+async function captureAngle() {
+  if (capturedAngles.length >= angleSteps.length) return;
+  const blob = await captureBlob();
+  capturedAngles.push(blob);
+  currentAngleIndex = Math.min(capturedAngles.length, angleSteps.length - 1);
+  renderAngleStrip();
+  tg?.HapticFeedback?.impactOccurred('light');
+  if (capturedAngles.length >= 2) finishAnglesButton.hidden = false;
+  if (capturedAngles.length === angleSteps.length) {
+    guidance.textContent = 'Все ракурсы сняты. Нажмите “Анализировать ракурсы”';
+    scanButton.disabled = true;
+  } else {
+    updateAngleGuide();
+  }
+}
+
+async function finishAngles() {
+  if (capturedAngles.length < 2) {
+    guidance.textContent = 'Нужно минимум 2 ракурса для уточнения';
+    return;
+  }
+  await submitScan(capturedAngles);
+  resetAngleMode();
+}
+
+function resetAngleMode() {
+  angleMode = false;
+  capturedAngles = [];
+  currentAngleIndex = 0;
+  angleStrip.hidden = true;
+  multiAngleButton.hidden = true;
+  finishAnglesButton.hidden = true;
+  resetAnglesButton.hidden = true;
+  scanButton.disabled = false;
+  scanButton.textContent = 'Сканировать ещё';
+  setShape('shape-main');
+}
+
+function updateAngleGuide() {
+  const step = angleSteps[currentAngleIndex];
+  setShape(step.shape);
+  statusLabel.textContent = `Ракурс ${currentAngleIndex + 1}/${angleSteps.length}: ${step.label}`;
+  guidance.textContent = step.hint;
+  renderAngleStrip();
+}
+
+function renderAngleStrip() {
+  if (!angleStrip) return;
+  angleStrip.innerHTML = angleSteps.map((step, index) => {
+    const done = index < capturedAngles.length;
+    const active = index === currentAngleIndex && angleMode;
+    return `<div class="angle-chip ${done ? 'done' : ''} ${active ? 'active' : ''}">${done ? '✓ ' : ''}${escapeHtml(step.label)}</div>`;
+  }).join('');
+}
+
+function setShape(shapeClass) {
+  partShapeGuide.className = `part-shape-guide ${shapeClass}`;
 }
 
 async function readJsonResponse(response) {
-  try {
-    return await response.json();
-  } catch {
-    return {};
-  }
+  try { return await response.json(); } catch { return {}; }
 }
 
 async function loadParts() {
   const response = await fetch('/api/v1/parts');
-  const parts = response.ok ? await response.json() : [];
-  countLabel.textContent = parts.length;
-  partsList.innerHTML = parts.length ? parts.map(renderPart).join('') : '<div class="empty">Пока нет сохранённых деталей</div>';
+  allParts = response.ok ? await response.json() : [];
+  countLabel.textContent = allParts.length;
+  renderCategoryFilters();
+  renderParts();
+}
+
+function renderCategoryFilters() {
+  const categories = [...new Set(allParts.map(part => part.category || 'unknown'))].sort((a, b) => a.localeCompare(b, 'ru'));
+  const buttons = ['all', ...categories].map(category => {
+    const label = category === 'all' ? 'Все' : category;
+    const active = selectedCategory === category;
+    return `<button class="category-chip ${active ? 'active' : ''}" type="button" onclick="selectCategory('${escapeJs(category)}')">${escapeHtml(label)}</button>`;
+  });
+  categoryFilters.innerHTML = buttons.join('');
+}
+
+function selectCategory(category) {
+  selectedCategory = category;
+  renderCategoryFilters();
+  renderParts();
+}
+
+function renderParts() {
+  const visibleParts = selectedCategory === 'all' ? allParts : allParts.filter(part => (part.category || 'unknown') === selectedCategory);
+  partsList.innerHTML = visibleParts.length ? visibleParts.map(renderPart).join('') : '<div class="empty">В этой категории пока нет деталей</div>';
 }
 
 function renderPart(part) {
@@ -223,10 +327,7 @@ function renderPart(part) {
   return `
     <article class="part-card" data-part-id="${escapeHtml(part.id)}">
       <div class="part-head">
-        <div>
-          <div class="part-name">${title}</div>
-          <div class="meta">${escapeHtml(meta)}</div>
-        </div>
+        <div><div class="part-name">${title}</div><div class="meta">${escapeHtml(meta)}</div></div>
         <div class="confidence">${confidence}%</div>
       </div>
       <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
@@ -245,18 +346,10 @@ function renderPart(part) {
 }
 
 function statusLabelText(status) {
-  return {
-    pending: 'ожидает проверки',
-    confirmed: 'подтверждено',
-    corrected: 'исправлено',
-    needs_review: 'нужна проверка',
-    needs_photo: 'нужен доп. кадр'
-  }[status] || status;
+  return { pending: 'ожидает проверки', confirmed: 'подтверждено', corrected: 'исправлено', needs_review: 'нужна проверка', needs_photo: 'нужен доп. кадр' }[status] || status;
 }
 
-async function confirmPart(id) {
-  await sendReview(id, { isCorrect: true });
-}
+async function confirmPart(id) { await sendReview(id, { isCorrect: true }); }
 
 async function quickEditPart(id) {
   const currentCard = document.querySelector(`[data-part-id="${CSS.escape(id)}"]`);
@@ -268,9 +361,7 @@ async function quickEditPart(id) {
 
 async function sendReview(id, payload) {
   const response = await fetch(`/api/v1/parts/${id}/review`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   });
   if (!response.ok) {
     const error = await readJsonResponse(response);
@@ -283,33 +374,35 @@ async function sendReview(id, payload) {
   await loadParts();
 }
 
+function toggleCatalog(show = catalogPanel.hidden) {
+  catalogPanel.hidden = !show;
+  if (show) loadParts();
+}
+
 function parseList(value) {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value || '[]') : value;
     return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  }[char]));
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
 }
 
-function escapeJs(value) {
-  return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
+function escapeJs(value) { return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+window.selectCategory = selectCategory;
+window.confirmPart = confirmPart;
+window.quickEditPart = quickEditPart;
 
 scanButton.addEventListener('click', scan);
-retakeButton.addEventListener('click', hidePreview);
+multiAngleButton.addEventListener('click', enterAngleMode);
+finishAnglesButton.addEventListener('click', finishAngles);
+resetAnglesButton.addEventListener('click', resetAngleMode);
 retryButton.addEventListener('click', startCamera);
-refreshButton.addEventListener('click', loadParts);
+catalogToggle.addEventListener('click', () => toggleCatalog());
+catalogClose.addEventListener('click', () => toggleCatalog(false));
 
 scanButton.disabled = true;
 startCamera();
