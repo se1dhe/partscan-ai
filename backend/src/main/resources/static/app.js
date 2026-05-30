@@ -11,23 +11,25 @@ const angleHint = document.getElementById('angleHint');
 const guidance = document.getElementById('guidance');
 const statusLabel = document.getElementById('status');
 const progressLine = document.getElementById('progressLine')?.querySelector('span');
+const scanOverlay = document.getElementById('scanOverlay');
+const scanOverlayText = document.getElementById('scanOverlayText');
 
-const SCANNER_TICK_MS = 650;
-const REQUIRED_STABLE_TICKS = 3;
-const NORMAL_SCAN_COOLDOWN_MS = 12_000;
-const SAVED_SCAN_COOLDOWN_MS = 18_000;
-const REJECTED_SCAN_COOLDOWN_MS = 25_000;
-const ERROR_SCAN_COOLDOWN_MS = 10_000;
-const RATE_LIMIT_COOLDOWN_MS = 12_000;
-const ANGLE_CAPTURE_COOLDOWN_MS = 1_800;
-const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 16;
-const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 10;
+const SCANNER_TICK_MS = 420;
+const REQUIRED_STABLE_TICKS = 2;
+const NORMAL_SCAN_COOLDOWN_MS = 5_000;
+const SAVED_SCAN_COOLDOWN_MS = 9_000;
+const REJECTED_SCAN_COOLDOWN_MS = 12_000;
+const ERROR_SCAN_COOLDOWN_MS = 7_000;
+const RATE_LIMIT_COOLDOWN_MS = 8_000;
+const ANGLE_CAPTURE_COOLDOWN_MS = 900;
+const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 12;
+const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 7;
 
 const angleSteps = [
-  { short: 'целиком', shape: 'shape-main', title: 'Деталь целиком', hint: 'Вся деталь внутри контура', caption: 'целиком' },
-  { short: 'номер', shape: 'shape-marking', title: 'Маркировка', hint: 'Номер, наклейка или логотип в рамке', caption: 'номер / логотип' },
-  { short: 'сбоку', shape: 'shape-side', title: 'Боковой вид', hint: 'Поверните деталь боком', caption: 'сбоку' },
-  { short: 'разъёмы', shape: 'shape-ports', title: 'Разъёмы', hint: 'Фишки, трубки или отверстия в контуре', caption: 'разъёмы' }
+  { short: 'целиком', shape: 'shape-main', title: 'Деталь целиком', hint: 'Снимите общий вид детали или узла', caption: 'общий вид' },
+  { short: 'маркировка', shape: 'shape-marking', title: 'Маркировка', hint: 'Подведите камеру к номеру, наклейке или логотипу', caption: 'номер / логотип' },
+  { short: 'сбоку', shape: 'shape-side', title: 'Угол сбоку', hint: 'Сместите камеру левее или правее, деталь трогать не нужно', caption: 'камера сбоку' },
+  { short: 'разъёмы', shape: 'shape-ports', title: 'Разъёмы', hint: 'Подведите камеру к фишкам, портам или креплениям', caption: 'разъёмы / крепления' }
 ];
 
 let stream;
@@ -50,6 +52,7 @@ startCamera();
 
 async function startCamera() {
   stopCamera();
+  setOverlay(false);
   setStatus('Запрашиваю камеру', 'Разрешите доступ к камере');
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -109,8 +112,8 @@ function startAutoScanner() {
     }
 
     stableScore += 1;
-    statusLabel.textContent = 'Держите ровно';
-    guidance.textContent = `Автозахват ${Math.min(stableScore, REQUIRED_STABLE_TICKS)}/${REQUIRED_STABLE_TICKS}`;
+    statusLabel.textContent = stableScore >= REQUIRED_STABLE_TICKS ? 'Захват кадра' : 'Почти готово';
+    guidance.textContent = `Держите ровно ${Math.min(stableScore, REQUIRED_STABLE_TICKS)}/${REQUIRED_STABLE_TICKS}`;
 
     if (stableScore >= REQUIRED_STABLE_TICKS) {
       stableScore = 0;
@@ -148,10 +151,10 @@ function sampleFrameMetrics() {
 }
 
 function isFrameReady(metrics) {
-  if (metrics.brightness < 48) return fail(metrics, 'Темно', 'Добавьте свет');
-  if (metrics.brightness > 220) return fail(metrics, 'Блик', 'Наклоните деталь');
-  if (metrics.contrast < 8) return fail(metrics, 'Не в фокусе', 'Поднесите ближе или наведите на маркировку');
-  if (metrics.motion > 34) return fail(metrics, 'Камера движется', 'Держите телефон ровнее');
+  if (metrics.brightness < 42) return fail(metrics, 'Темно', 'Добавьте свет или фонарик');
+  if (metrics.brightness > 232) return fail(metrics, 'Блик', 'Сместите камеру от блика');
+  if (metrics.contrast < 6) return fail(metrics, 'Не в фокусе', 'Подведите камеру ближе к детали');
+  if (metrics.motion > 46) return fail(metrics, 'Камера движется', 'На секунду зафиксируйте телефон');
   return { ...metrics, ok: true, reason: 'Кадр подходит', hint: 'Не двигайте телефон' };
 }
 
@@ -164,17 +167,17 @@ function duplicateFrameGuard(metrics) {
   if (multiAngleMode) {
     const previousAngleFingerprint = capturedAngleFingerprints[capturedAngleFingerprints.length - 1];
     if (previousAngleFingerprint != null && fingerprintDelta(metrics.fingerprint, previousAngleFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-      return { ok: false, reason: 'Поверните деталь', hint: angleSteps[currentAngleIndex].hint };
+      return { ok: false, reason: 'Смените угол камеры', hint: angleSteps[currentAngleIndex].hint };
     }
     return { ok: true };
   }
 
   if (lastSubmittedFingerprint != null && fingerprintDelta(metrics.fingerprint, lastSubmittedFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN) {
-    return { ok: false, reason: 'Кадр уже проверен', hint: 'Измените ракурс или покажите другую деталь' };
+    return { ok: false, reason: 'Кадр уже проверен', hint: 'Сместите камеру или покажите другую часть детали' };
   }
 
   if (lastRejectedFingerprint != null && fingerprintDelta(metrics.fingerprint, lastRejectedFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN) {
-    return { ok: false, reason: 'Это уже проверяли', hint: 'Покажите именно автодеталь' };
+    return { ok: false, reason: 'Это уже проверяли', hint: 'Наведите камеру на автодеталь или узел машины' };
   }
 
   return { ok: true };
@@ -186,7 +189,7 @@ function fingerprintDelta(current, previous) {
 
 function updateProgress(metrics, ready) {
   if (!progressLine) return;
-  const base = ready.ok ? 65 + stableScore * 12 : Math.max(8, Math.min(55, metrics.contrast * 4));
+  const base = ready.ok ? 70 + stableScore * 15 : Math.max(10, Math.min(58, metrics.contrast * 5));
   progressLine.style.width = `${Math.min(100, base)}%`;
 }
 
@@ -216,10 +219,11 @@ async function captureBlob() {
 async function submitScan(blobs, fingerprint = null) {
   if (scanning) return;
   scanning = true;
+  setOverlay(true, blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализирую кадр');
   lastAiRequestAt = Date.now();
   if (fingerprint != null) lastSubmittedFingerprint = fingerprint;
   setCooldown(NORMAL_SCAN_COOLDOWN_MS, 'Анализ кадра');
-  setStatus(blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализ кадра', 'Камера остаётся живой');
+  setStatus(blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализ кадра', 'Ждём ответ модели');
 
   try {
     const form = new FormData();
@@ -250,6 +254,7 @@ async function submitScan(blobs, fingerprint = null) {
     tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
     scanning = false;
+    setOverlay(false);
   }
 }
 
@@ -257,7 +262,7 @@ function handleScanResult(part) {
   const confidence = part?.confidence || 0;
   const percent = Math.round(confidence * 100);
   if (confidence < 0.9 || part?.needsBetterPhoto) {
-    setStatus(`${percent}% · нужен ракурс`, 'Следуйте рамке на экране');
+    setStatus(`${percent}% · нужен другой угол`, 'Смените позицию камеры, деталь можно не трогать');
     enterMultiAngleMode();
     return;
   }
@@ -269,7 +274,7 @@ function handleScanResult(part) {
 
 function showRejected(payload) {
   resetMultiAngleMode();
-  setShape('shape-main', 'автодеталь');
+  setShape('shape-main', 'автодеталь / узел');
   angleTitle.textContent = 'Это не автодеталь';
   angleHint.textContent = payload.nextAction || 'Наведите камеру на автомобильную деталь';
   setStatus('Не сохраняю в базу', payload.message || 'В кадре не похожая на автодеталь вещь');
@@ -287,13 +292,13 @@ function enterMultiAngleMode() {
   capturedAngleFingerprints = [];
   currentAngleIndex = 0;
   setCoach(angleSteps[currentAngleIndex]);
-  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте ракурс');
+  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте угол камеры');
 }
 
 async function captureAngle(fingerprint) {
   if (fingerprint != null && lastCaptureFingerprint != null && fingerprintDelta(fingerprint, lastCaptureFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-    setStatus('Ракурс не изменился', angleSteps[currentAngleIndex].hint);
-    setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Поверните деталь');
+    setStatus('Угол не изменился', angleSteps[currentAngleIndex].hint);
+    setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Сместите камеру');
     return;
   }
 
@@ -315,7 +320,7 @@ async function captureAngle(fingerprint) {
   currentAngleIndex = capturedAngles.length;
   setCoach(angleSteps[currentAngleIndex]);
   setStatus(`${capturedAngles.length}/${angleSteps.length} снято`, angleSteps[currentAngleIndex].hint);
-  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Поверните деталь');
+  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Смените угол камеры');
 }
 
 function resetMultiAngleMode(resetCoach = true) {
@@ -341,6 +346,12 @@ function setShape(shapeClass, caption) {
 function setStatus(status, hint) {
   statusLabel.textContent = status;
   guidance.textContent = hint;
+}
+
+function setOverlay(show, text = 'Анализирую') {
+  if (!scanOverlay) return;
+  scanOverlay.hidden = !show;
+  if (scanOverlayText) scanOverlayText.textContent = text;
 }
 
 async function readJsonResponse(response) {
