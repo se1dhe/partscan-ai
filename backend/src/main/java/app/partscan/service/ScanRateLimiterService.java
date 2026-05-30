@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ScanRateLimiterService {
- private static final Duration MIN_INTERVAL = Duration.ofSeconds(8);
+ private static final Duration MIN_INTERVAL = Duration.ofSeconds(4);
  private static final Duration ENTRY_TTL = Duration.ofMinutes(10);
  private final Map<String, Instant> lastScanByClient = new ConcurrentHashMap<>();
 
