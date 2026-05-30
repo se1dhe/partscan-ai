@@ -4,6 +4,7 @@ tg?.expand();
 
 const video = document.getElementById('camera');
 const canvas = document.getElementById('frameCanvas');
+const cameraShell = document.querySelector('.camera-shell');
 const partShapeGuide = document.getElementById('partShapeGuide');
 const shapeCaption = document.getElementById('shapeCaption');
 const guideAction = document.getElementById('guideAction');
@@ -28,7 +29,7 @@ const RATE_LIMIT_COOLDOWN_MS = 4_000;
 const MAX_SCAN_FRAMES = 4;
 
 const guideSteps = [
-  { guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Быстрый скан', hint: 'Наведите камеру на деталь и нажмите СКАН', caption: 'быстрый ручной режим', action: 'наведите и нажмите СКАН' },
+  { guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Быстрый скан', hint: 'Наведите камеру на деталь и нажмите СКАН', caption: '', action: '' },
   { guide: 'guide-marking', direction: 'closer', arrow: '↓', title: 'Уточнить маркировку', hint: 'Покажите номер, наклейку или логотип', caption: 'номер / наклейка / логотип', action: 'покажите номер крупнее' },
   { guide: 'guide-connectors', direction: 'lower', arrow: '↘', title: 'Уточнить разъёмы', hint: 'Покажите фишки, порты, трубки или крепления', caption: 'разъёмы / крепления', action: 'покажите места подключения' },
   { guide: 'guide-side', direction: 'right', arrow: '→', title: 'Уточнить сбоку', hint: 'Сместите камеру в сторону, деталь трогать не нужно', caption: 'боковой угол', action: 'сместитесь камерой в сторону' }
@@ -293,6 +294,12 @@ function pause(milliseconds, reason) {
 
 function setGuide(index) {
   const step = guideSteps[index] || guideSteps[0];
+  const showHeavyGuide = index > 0;
+
+  cameraShell?.classList.toggle('fast-mode', !showHeavyGuide);
+  cameraShell?.classList.toggle('refine-mode', showHeavyGuide);
+  if (partShapeGuide) partShapeGuide.hidden = !showHeavyGuide;
+
   partShapeGuide.className = `part-shape-guide ${step.guide}`;
   partShapeGuide.dataset.direction = step.direction;
   angleTitle.textContent = step.title;
