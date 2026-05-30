@@ -13,6 +13,8 @@ const statusLabel = document.getElementById('status');
 const progressLine = document.getElementById('progressLine')?.querySelector('span');
 const scanOverlay = document.getElementById('scanOverlay');
 const scanOverlayText = document.getElementById('scanOverlayText');
+const readyOverlay = document.getElementById('readyOverlay');
+const startScanButton = document.getElementById('startScanButton');
 
 const SCANNER_TICK_MS = 420;
 const REQUIRED_STABLE_TICKS = 2;
@@ -35,6 +37,7 @@ const angleSteps = [
 let stream;
 let scannerTimer;
 let scanning = false;
+let scanArmed = false;
 let pausedUntil = 0;
 let pauseReason = '';
 let previousFingerprint = null;
@@ -48,11 +51,14 @@ let lastRejectedFingerprint = null;
 let lastCaptureFingerprint = null;
 let lastAiRequestAt = 0;
 
+startScanButton?.addEventListener('click', armScanner);
 startCamera();
 
 async function startCamera() {
   stopCamera();
+  scanArmed = false;
   setOverlay(false);
+  setReadyOverlay(false);
   setStatus('Запрашиваю камеру', 'Разрешите доступ к камере');
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -66,23 +72,33 @@ async function startCamera() {
     });
     video.srcObject = stream;
     await video.play();
+    resetScannerMemory();
     setCoach(angleSteps[0]);
-    setStatus('Ищу деталь', 'Держите автодеталь внутри контура');
-    startAutoScanner();
+    setStatus('Камера готова', 'Нажмите кнопку в центре, когда будете готовы сканировать');
+    setReadyOverlay(true);
   } catch (error) {
     setStatus('Нет доступа к камере', 'Откройте по HTTPS и разрешите камеру');
   }
 }
 
+function armScanner() {
+  scanArmed = true;
+  setReadyOverlay(false);
+  setStatus('Ищу деталь', 'Держите автодеталь внутри контура');
+  tg?.HapticFeedback?.impactOccurred('light');
+  startAutoScanner();
+}
+
 function stopCamera() {
   if (stream) stream.getTracks().forEach(track => track.stop());
   if (scannerTimer) clearInterval(scannerTimer);
+  scannerTimer = null;
 }
 
 function startAutoScanner() {
   if (scannerTimer) clearInterval(scannerTimer);
   scannerTimer = setInterval(async () => {
-    if (!video.videoWidth || scanning) return;
+    if (!scanArmed || !video.videoWidth || scanning) return;
 
     const now = Date.now();
     const metrics = sampleFrameMetrics();
@@ -121,6 +137,22 @@ function startAutoScanner() {
       else await submitScan([await captureBlob()], metrics.fingerprint);
     }
   }, SCANNER_TICK_MS);
+}
+
+function resetScannerMemory() {
+  pausedUntil = 0;
+  pauseReason = '';
+  previousFingerprint = null;
+  stableScore = 0;
+  capturedAngles = [];
+  capturedAngleFingerprints = [];
+  currentAngleIndex = 0;
+  multiAngleMode = false;
+  lastSubmittedFingerprint = null;
+  lastRejectedFingerprint = null;
+  lastCaptureFingerprint = null;
+  lastAiRequestAt = 0;
+  if (progressLine) progressLine.style.width = '8%';
 }
 
 function sampleFrameMetrics() {
@@ -352,6 +384,11 @@ function setOverlay(show, text = 'Анализирую') {
   if (!scanOverlay) return;
   scanOverlay.hidden = !show;
   if (scanOverlayText) scanOverlayText.textContent = text;
+}
+
+function setReadyOverlay(show) {
+  if (!readyOverlay) return;
+  readyOverlay.hidden = !show;
 }
 
 async function readJsonResponse(response) {
