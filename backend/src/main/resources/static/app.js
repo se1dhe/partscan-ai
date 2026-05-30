@@ -50,6 +50,8 @@ let lastSubmittedFingerprint = null;
 let lastRejectedFingerprint = null;
 let lastCaptureFingerprint = null;
 let lastAiRequestAt = 0;
+let preliminaryPartName = '';
+let preliminaryPartConfidence = 0;
 
 startScanButton?.addEventListener('click', armScanner);
 startCamera();
@@ -152,6 +154,8 @@ function resetScannerMemory() {
   lastRejectedFingerprint = null;
   lastCaptureFingerprint = null;
   lastAiRequestAt = 0;
+  preliminaryPartName = '';
+  preliminaryPartConfidence = 0;
   if (progressLine) progressLine.style.width = '8%';
 }
 
@@ -293,13 +297,19 @@ async function submitScan(blobs, fingerprint = null) {
 function handleScanResult(part) {
   const confidence = part?.confidence || 0;
   const percent = Math.round(confidence * 100);
+  const name = compactPartName(part?.name || part?.normalizedName || 'Деталь');
+
   if (confidence < 0.9 || part?.needsBetterPhoto) {
-    setStatus(`${percent}% · нужен другой угол`, 'Смените позицию камеры, деталь можно не трогать');
-    enterMultiAngleMode();
+    preliminaryPartName = name;
+    preliminaryPartConfidence = percent;
+    setStatus(`${name} · ${percent}%`, 'Предварительно найдено и сохранено. Для точности покажите ещё один угол камеры');
+    enterMultiAngleMode(name, percent);
     return;
   }
 
-  setStatus(`${part?.name || 'Деталь'} · ${percent}%`, 'Сохранено в базе');
+  preliminaryPartName = '';
+  preliminaryPartConfidence = 0;
+  setStatus(`${name} · ${percent}%`, 'Сохранено в базе');
   resetMultiAngleMode();
   setCooldown(SAVED_SCAN_COOLDOWN_MS, 'Деталь сохранена');
 }
@@ -318,12 +328,16 @@ function showRateLimited(payload) {
   setCooldown(RATE_LIMIT_COOLDOWN_MS, 'Лимит защиты');
 }
 
-function enterMultiAngleMode() {
+function enterMultiAngleMode(name = preliminaryPartName, percent = preliminaryPartConfidence) {
   multiAngleMode = true;
   capturedAngles = [];
   capturedAngleFingerprints = [];
   currentAngleIndex = 0;
   setCoach(angleSteps[currentAngleIndex]);
+  if (name) {
+    angleTitle.textContent = `Найдено: ${name}`;
+    shapeCaption.textContent = `${percent}% · уточнить ракурс`;
+  }
   setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте угол камеры');
 }
 
@@ -351,7 +365,11 @@ async function captureAngle(fingerprint) {
 
   currentAngleIndex = capturedAngles.length;
   setCoach(angleSteps[currentAngleIndex]);
-  setStatus(`${capturedAngles.length}/${angleSteps.length} снято`, angleSteps[currentAngleIndex].hint);
+  if (preliminaryPartName) {
+    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, `${capturedAngles.length}/${angleSteps.length} ракурсов · ${angleSteps[currentAngleIndex].hint}`);
+  } else {
+    setStatus(`${capturedAngles.length}/${angleSteps.length} снято`, angleSteps[currentAngleIndex].hint);
+  }
   setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Смените угол камеры');
 }
 
@@ -361,6 +379,8 @@ function resetMultiAngleMode(resetCoach = true) {
   capturedAngleFingerprints = [];
   currentAngleIndex = 0;
   lastCaptureFingerprint = null;
+  preliminaryPartName = '';
+  preliminaryPartConfidence = 0;
   if (resetCoach) setCoach(angleSteps[0]);
 }
 
@@ -389,6 +409,11 @@ function setOverlay(show, text = 'Анализирую') {
 function setReadyOverlay(show) {
   if (!readyOverlay) return;
   readyOverlay.hidden = !show;
+}
+
+function compactPartName(value) {
+  const text = String(value || 'Деталь').trim();
+  return text.length > 34 ? `${text.slice(0, 31).trim()}…` : text;
 }
 
 async function readJsonResponse(response) {
