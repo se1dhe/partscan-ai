@@ -6,6 +6,8 @@ const video = document.getElementById('camera');
 const canvas = document.getElementById('frameCanvas');
 const partShapeGuide = document.getElementById('partShapeGuide');
 const shapeCaption = document.getElementById('shapeCaption');
+const guideAction = document.getElementById('guideAction');
+const guideArrow = document.getElementById('guideArrow');
 const angleTitle = document.getElementById('angleTitle');
 const angleHint = document.getElementById('angleHint');
 const guidance = document.getElementById('guidance');
@@ -28,10 +30,10 @@ const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 12;
 const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 7;
 
 const angleSteps = [
-  { short: 'целиком', shape: 'shape-main', title: 'Деталь целиком', hint: 'Снимите общий вид детали или узла', caption: 'общий вид' },
-  { short: 'маркировка', shape: 'shape-marking', title: 'Маркировка', hint: 'Подведите камеру к номеру, наклейке или логотипу', caption: 'номер / логотип' },
-  { short: 'сбоку', shape: 'shape-side', title: 'Угол сбоку', hint: 'Сместите камеру левее или правее, деталь трогать не нужно', caption: 'камера сбоку' },
-  { short: 'разъёмы', shape: 'shape-ports', title: 'Разъёмы', hint: 'Подведите камеру к фишкам, портам или креплениям', caption: 'разъёмы / крепления' }
+  { short: 'целиком', guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Общий вид', hint: 'Держите деталь или узел в большой рамке', caption: 'общий вид детали', action: 'поместите деталь в центр' },
+  { short: 'маркировка', guide: 'guide-marking', direction: 'closer', arrow: '↓', title: 'Маркировка', hint: 'Подведите камеру к номеру, наклейке или логотипу', caption: 'номер / наклейка / логотип', action: 'покажите номер крупнее' },
+  { short: 'сбоку', guide: 'guide-side', direction: 'right', arrow: '→', title: 'Боковой угол', hint: 'Сместите камеру левее или правее, деталь трогать не нужно', caption: 'камера под углом сбоку', action: 'сместитесь камерой в сторону' },
+  { short: 'разъёмы', guide: 'guide-connectors', direction: 'lower', arrow: '↘', title: 'Разъёмы / крепления', hint: 'Подведите камеру к фишкам, портам, трубкам или креплениям', caption: 'разъёмы / фишки / крепления', action: 'покажите места подключения' }
 ];
 
 let stream;
@@ -203,7 +205,7 @@ function duplicateFrameGuard(metrics) {
   if (multiAngleMode) {
     const previousAngleFingerprint = capturedAngleFingerprints[capturedAngleFingerprints.length - 1];
     if (previousAngleFingerprint != null && fingerprintDelta(metrics.fingerprint, previousAngleFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-      return { ok: false, reason: 'Смените угол камеры', hint: angleSteps[currentAngleIndex].hint };
+      return { ok: false, reason: 'Смените позицию камеры', hint: angleSteps[currentAngleIndex].hint };
     }
     return { ok: true };
   }
@@ -302,7 +304,7 @@ function handleScanResult(part) {
   if (confidence < 0.9 || part?.needsBetterPhoto) {
     preliminaryPartName = name;
     preliminaryPartConfidence = percent;
-    setStatus(`${name} · ${percent}%`, 'Предварительно найдено и сохранено. Для точности покажите ещё один угол камеры');
+    setStatus(`${name} · ${percent}%`, 'Предварительно найдено и сохранено. Для точности покажите ещё одну зону детали');
     enterMultiAngleMode(name, percent);
     return;
   }
@@ -316,9 +318,7 @@ function handleScanResult(part) {
 
 function showRejected(payload) {
   resetMultiAngleMode();
-  setShape('shape-main', 'автодеталь / узел');
-  angleTitle.textContent = 'Это не автодеталь';
-  angleHint.textContent = payload.nextAction || 'Наведите камеру на автомобильную деталь';
+  setCoach({ guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Это не автодеталь', hint: payload.nextAction || 'Наведите камеру на автомобильную деталь', caption: 'автодеталь / узел', action: 'покажите деталь машины' });
   setStatus('Не сохраняю в базу', payload.message || 'В кадре не похожая на автодеталь вещь');
   setCooldown(REJECTED_SCAN_COOLDOWN_MS, 'Не автодеталь');
 }
@@ -336,14 +336,15 @@ function enterMultiAngleMode(name = preliminaryPartName, percent = preliminaryPa
   setCoach(angleSteps[currentAngleIndex]);
   if (name) {
     angleTitle.textContent = `Найдено: ${name}`;
-    shapeCaption.textContent = `${percent}% · уточнить ракурс`;
+    shapeCaption.textContent = `${percent}% · нужен доп. ракурс`;
+    guideAction.textContent = 'теперь покажите нужную зону';
   }
-  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте угол камеры');
+  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте позицию камеры');
 }
 
 async function captureAngle(fingerprint) {
   if (fingerprint != null && lastCaptureFingerprint != null && fingerprintDelta(fingerprint, lastCaptureFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-    setStatus('Угол не изменился', angleSteps[currentAngleIndex].hint);
+    setStatus('Позиция почти та же', angleSteps[currentAngleIndex].hint);
     setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Сместите камеру');
     return;
   }
@@ -366,11 +367,11 @@ async function captureAngle(fingerprint) {
   currentAngleIndex = capturedAngles.length;
   setCoach(angleSteps[currentAngleIndex]);
   if (preliminaryPartName) {
-    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, `${capturedAngles.length}/${angleSteps.length} ракурсов · ${angleSteps[currentAngleIndex].hint}`);
+    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, `${capturedAngles.length}/${angleSteps.length} зон · ${angleSteps[currentAngleIndex].hint}`);
   } else {
-    setStatus(`${capturedAngles.length}/${angleSteps.length} снято`, angleSteps[currentAngleIndex].hint);
+    setStatus(`${capturedAngles.length}/${angleSteps.length} зон снято`, angleSteps[currentAngleIndex].hint);
   }
-  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Смените угол камеры');
+  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Смените позицию камеры');
 }
 
 function resetMultiAngleMode(resetCoach = true) {
@@ -387,12 +388,15 @@ function resetMultiAngleMode(resetCoach = true) {
 function setCoach(step) {
   angleTitle.textContent = step.title;
   angleHint.textContent = step.hint;
-  setShape(step.shape, step.caption);
+  partShapeGuide.className = `part-shape-guide ${step.guide || 'guide-overview'}`;
+  partShapeGuide.dataset.direction = step.direction || 'center';
+  shapeCaption.textContent = step.caption || '';
+  if (guideAction) guideAction.textContent = step.action || step.hint || '';
+  if (guideArrow) guideArrow.textContent = step.arrow || '◎';
 }
 
 function setShape(shapeClass, caption) {
-  partShapeGuide.className = `part-shape-guide ${shapeClass}`;
-  shapeCaption.textContent = caption || '';
+  setCoach({ guide: shapeClass, direction: 'center', arrow: '◎', title: angleTitle.textContent || '', hint: angleHint.textContent || '', caption, action: caption || '' });
 }
 
 function setStatus(status, hint) {
