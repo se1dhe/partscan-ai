@@ -29,6 +29,13 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan-overlay[hidden] { display: none; }
 .scan-spinner { width: 38px; height: 38px; border-radius: 999px; border: 4px solid rgba(255,255,255,.18); border-top-color: var(--accent-2); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.ready-overlay { position: fixed; z-index: 75; inset: 0; display: grid; place-items: center; padding: 20px; background: linear-gradient(to bottom, rgba(0,0,0,.22), rgba(0,0,0,.54)); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.ready-overlay[hidden] { display: none; }
+.ready-card { width: min(340px, calc(100vw - 36px)); padding: 18px; border-radius: 28px; background: rgba(7,10,8,.78); border: 1px solid rgba(141,243,220,.24); box-shadow: 0 24px 80px rgba(0,0,0,.48); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); text-align: center; }
+.ready-kicker { display: inline-flex; margin-bottom: 10px; padding: 6px 10px; border-radius: 999px; background: rgba(57,214,184,.13); color: var(--accent-2); font-size: 12px; font-weight: 950; }
+.ready-title { font-size: 24px; line-height: 1.05; letter-spacing: -.04em; font-weight: 950; margin-bottom: 8px; }
+.ready-text { color: var(--muted); font-size: 14px; line-height: 1.35; margin-bottom: 16px; }
+.start-scan-button { width: 100%; min-height: 54px; border-radius: 20px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-size: 16px; font-weight: 950; box-shadow: 0 18px 40px rgba(57,214,184,.25); }
 .part-shape-guide { position: absolute; z-index: 5; pointer-events: none; left: 50%; top: 45%; transform: translate(-50%, -50%); width: 74%; height: 42%; border: 4px dashed rgba(141,243,220,.96); border-radius: 34px; filter: drop-shadow(0 0 18px rgba(57,214,184,.55)); transition: width .22s ease, height .22s ease, border-radius .22s ease, transform .22s ease, top .22s ease; }
 .part-shape-guide::before, .part-shape-guide::after { content: ""; position: absolute; border: 3px dashed rgba(141,243,220,.8); }
 .shape-caption { position: absolute; left: 50%; bottom: -42px; transform: translateX(-50%); padding: 8px 12px; border-radius: 999px; background: rgba(7,10,8,.68); color: #fff; font-size: 13px; font-weight: 950; white-space: nowrap; backdrop-filter: blur(12px); }
@@ -64,6 +71,8 @@ h1 { font-size: 24px; line-height: 1.05; letter-spacing: -.04em; }
 .part-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
 .part-name { font-weight: 950; line-height: 1.18; letter-spacing: -.02em; }
 .confidence { flex: 0 0 auto; color: var(--accent-2); font-weight: 950; }
+.scan-datetime { display: block; padding: 9px 10px; border-radius: 14px; background: rgba(57,214,184,.1); color: rgba(246,250,245,.82); font-size: 13px; line-height: 1.25; }
+.scan-datetime strong { color: var(--accent-2); font-weight: 950; }
 .card-meta-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .status-pill, .scan-time { display: inline-flex; width: fit-content; border-radius: 999px; padding: 5px 8px; font-size: 12px; font-weight: 850; background: rgba(255,255,255,.1); color: var(--muted); }
 .status-pill.confirmed { background: rgba(25,122,68,.18); color: var(--ok); }
