@@ -67,6 +67,8 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bottom-status { position: fixed; z-index: 60; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); border-radius: 22px; padding: 12px; background: rgba(7,10,8,.64); border: 1px solid rgba(255,255,255,.1); box-shadow: 0 18px 58px rgba(0,0,0,.34); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .status-line { color: #fff; text-align: center; font-size: 14px; font-weight: 950; line-height: 1.25; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .guidance { color: rgba(246,250,245,.78); text-align: center; font-size: 13px; line-height: 1.25; padding: 0 6px 10px; }
+.scan-angle-button { width: 100%; min-height: 52px; margin: 2px 0 10px; border-radius: 18px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-size: 15px; font-weight: 950; box-shadow: 0 12px 34px rgba(57,214,184,.24); }
+.scan-angle-button[hidden] { display: none; }
 .progress-line { height: 6px; border-radius: 999px; background: rgba(255,255,255,.12); overflow: hidden; }
 .progress-line span { display: block; width: 8%; height: 100%; border-radius: inherit; background: linear-gradient(135deg, var(--accent), var(--accent-2)); transition: width .22s ease; }
 .catalog-page { min-height: 100svh; padding: max(14px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom)); background: radial-gradient(circle at top, rgba(57,214,184,.12), transparent 28rem), var(--bg); }
@@ -105,4 +107,4 @@ h1 { font-size: 24px; line-height: 1.05; letter-spacing: -.04em; }
 .empty { color: var(--muted); text-align: center; padding: 30px 8px; }
 @media (min-width: 760px) { .scan-page, .catalog-page { max-width: 480px; margin: 0 auto; } .catalog-link { right: calc(50% - 230px); } .scan-hint, .bottom-status { left: calc(50% - 230px); right: calc(50% - 230px); } }
 @media (max-width: 430px) { .part-shape-guide { width: 80%; } .guide-action { max-width: 86vw; font-size: 12px; } .shape-caption { max-width: 82vw; overflow: hidden; text-overflow: ellipsis; } .part-shape-guide[data-direction="right"] .guide-arrow { left: calc(100% + 18px); } }
-@media (max-height: 760px) { .part-shape-guide { top: 42%; } .guide-arrow { top: -46px; width: 40px; height: 40px; font-size: 21px; } .guide-action { bottom: -42px; font-size: 12px; padding: 7px 10px; } .shape-caption { bottom: -72px; font-size: 11px; } .bottom-status { padding: 10px; } .guidance { font-size: 12px; padding-bottom: 8px; } }
+@media (max-height: 760px) { .part-shape-guide { top: 42%; } .guide-arrow { top: -46px; width: 40px; height: 40px; font-size: 21px; } .guide-action { bottom: -42px; font-size: 12px; padding: 7px 10px; } .shape-caption { bottom: -72px; font-size: 11px; } .bottom-status { padding: 10px; } .guidance { font-size: 12px; padding-bottom: 8px; } .scan-angle-button { min-height: 48px; margin-bottom: 8px; } }
