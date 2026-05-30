@@ -16,6 +16,7 @@ import java.util.List;
 @Service
 public class ScanService {
  private static final Logger log = LoggerFactory.getLogger(ScanService.class);
+ private static final double FINAL_CONFIDENCE_THRESHOLD = 0.9;
 
  private final OpenAiVisionService openAiVisionService;
  private final GeminiVisionService geminiVisionService;
@@ -38,7 +39,9 @@ public class ScanService {
 
   VisionAnalysisResult result = analyzeWithFallback(files);
   PartAnalysisDto analysis = result.analysis();
-  log.info("Scan analysis completed: provider={}, images={}, automotivePart={}, confidence={}", result.provider(), files.size(), analysis.automotivePart(), analysis.confidence());
+  double confidence = clampConfidence(analysis.confidence());
+  boolean confidentEnough = confidence >= FINAL_CONFIDENCE_THRESHOLD && !Boolean.TRUE.equals(analysis.needsBetterPhoto());
+  log.info("Scan analysis completed: provider={}, images={}, automotivePart={}, confidence={}, confidentEnough={}", result.provider(), files.size(), analysis.automotivePart(), confidence, confidentEnough);
 
   if (!Boolean.TRUE.equals(analysis.automotivePart())) {
    log.info("Scan rejected as non automotive part: name={}, reason={}", analysis.name(), analysis.identificationReason());
@@ -49,6 +52,15 @@ public class ScanService {
   }
 
   Part part = toPart(analysis, result.rawResponse());
+  if (!confidentEnough) {
+   log.info("Scan needs angle before final save: name={}, confidence={}, images={}", part.getName(), part.getConfidence(), files.size());
+   return ScanResponse.needsAngle(
+    part,
+    "Найдено предварительно, но для сохранения нужна точность выше 90%.",
+    firstTip(analysis.photoTips())
+   );
+  }
+
   Part savedPart = partRepository.save(part);
   log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus());
 
@@ -129,7 +141,7 @@ public class ScanService {
  private String reviewStatus(PartAnalysisDto analysis) {
   Double confidence = analysis.confidence();
   if (Boolean.TRUE.equals(analysis.needsBetterPhoto())) return "needs_photo";
-  if (confidence == null || confidence < 0.9) return "needs_review";
+  if (confidence == null || confidence < FINAL_CONFIDENCE_THRESHOLD) return "needs_review";
   return "pending";
  }
 
