@@ -36,17 +36,34 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ready-title { font-size: 24px; line-height: 1.05; letter-spacing: -.04em; font-weight: 950; margin-bottom: 8px; }
 .ready-text { color: var(--muted); font-size: 14px; line-height: 1.35; margin-bottom: 16px; }
 .start-scan-button { width: 100%; min-height: 54px; border-radius: 20px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-size: 16px; font-weight: 950; box-shadow: 0 18px 40px rgba(57,214,184,.25); }
-.part-shape-guide { position: absolute; z-index: 5; pointer-events: none; left: 50%; top: 45%; transform: translate(-50%, -50%); width: 74%; height: 42%; border: 4px dashed rgba(141,243,220,.96); border-radius: 34px; filter: drop-shadow(0 0 18px rgba(57,214,184,.55)); transition: width .22s ease, height .22s ease, border-radius .22s ease, transform .22s ease, top .22s ease; }
-.part-shape-guide::before, .part-shape-guide::after { content: ""; position: absolute; border: 3px dashed rgba(141,243,220,.8); }
-.shape-caption { position: absolute; left: 50%; bottom: -42px; transform: translateX(-50%); padding: 8px 12px; border-radius: 999px; background: rgba(7,10,8,.68); color: #fff; font-size: 13px; font-weight: 950; white-space: nowrap; backdrop-filter: blur(12px); }
-.shape-main { width: 74%; height: 42%; border-radius: 34px 50px 38px 46px; }
-.shape-marking { width: 54%; height: 18%; border-radius: 15px; top: 43%; }
-.shape-marking::before { inset: 25% 9%; border-radius: 8px; }
-.shape-side { width: 78%; height: 23%; border-radius: 18px 50px 50px 18px; top: 43%; }
-.shape-side::after { width: 21%; height: 48%; right: -12%; top: 25%; border-radius: 999px; }
-.shape-ports { width: 66%; height: 30%; border-radius: 28px; top: 43%; }
-.shape-ports::before { width: 19%; height: 35%; left: 11%; top: 32%; border-radius: 999px; }
-.shape-ports::after { width: 19%; height: 35%; right: 11%; top: 32%; border-radius: 999px; }
+.part-shape-guide { position: absolute; z-index: 5; pointer-events: none; left: 50%; top: 45%; transform: translate(-50%, -50%); width: 78%; height: 42%; border: 2px dashed rgba(141,243,220,.92); border-radius: 28px; box-shadow: 0 0 0 999px rgba(0,0,0,.08), 0 0 28px rgba(57,214,184,.32); transition: width .22s ease, height .22s ease, border-radius .22s ease, top .22s ease; }
+.guide-corners::before, .guide-corners::after, .part-shape-guide::before, .part-shape-guide::after { content: ""; position: absolute; width: 34px; height: 34px; border-color: rgba(141,243,220,.98); }
+.part-shape-guide::before { left: -3px; top: -3px; border-left: 5px solid; border-top: 5px solid; border-radius: 24px 0 0 0; }
+.part-shape-guide::after { right: -3px; top: -3px; border-right: 5px solid; border-top: 5px solid; border-radius: 0 24px 0 0; }
+.guide-corners::before { left: -3px; bottom: -3px; border-left: 5px solid; border-bottom: 5px solid; border-radius: 0 0 0 24px; }
+.guide-corners::after { right: -3px; bottom: -3px; border-right: 5px solid; border-bottom: 5px solid; border-radius: 0 0 24px 0; }
+.guide-target { position: absolute; left: 50%; top: 50%; width: 42%; height: 34%; transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,.78); border-radius: 18px; background: rgba(57,214,184,.08); box-shadow: inset 0 0 20px rgba(57,214,184,.12); transition: all .22s ease; }
+.guide-target::before { content: "+"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,.85); font-size: 24px; font-weight: 800; }
+.guide-arrow { position: absolute; left: 50%; top: -54px; transform: translateX(-50%); min-width: 46px; height: 46px; border-radius: 999px; display: grid; place-items: center; background: rgba(57,214,184,.9); color: #03110d; font-size: 24px; font-weight: 950; box-shadow: 0 10px 30px rgba(0,0,0,.32); animation: guidePulse 1.1s ease-in-out infinite; }
+.guide-action { position: absolute; left: 50%; bottom: -48px; transform: translateX(-50%); max-width: 94vw; padding: 9px 13px; border-radius: 999px; background: rgba(7,10,8,.78); color: #fff; font-size: 13px; font-weight: 950; line-height: 1.1; white-space: nowrap; backdrop-filter: blur(12px); }
+.shape-caption { position: absolute; left: 50%; bottom: -83px; transform: translateX(-50%); padding: 7px 10px; border-radius: 999px; background: rgba(57,214,184,.12); color: var(--accent-2); font-size: 12px; font-weight: 950; white-space: nowrap; backdrop-filter: blur(12px); }
+@keyframes guidePulse { 0%, 100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.08); } }
+.guide-overview { width: 78%; height: 42%; }
+.guide-overview .guide-target { width: 62%; height: 54%; border-radius: 24px; }
+.guide-overview[data-direction="center"] .guide-arrow { top: 50%; transform: translate(-50%, -50%); animation: none; background: rgba(57,214,184,.82); }
+.guide-overview[data-direction="center"] .guide-target { border-style: dashed; }
+.guide-marking { width: 74%; height: 34%; top: 43%; }
+.guide-marking .guide-target { width: 60%; height: 28%; top: 48%; border-radius: 12px; background: rgba(255,255,255,.1); }
+.guide-marking .guide-target::before { content: "№"; font-size: 20px; }
+.guide-side { width: 82%; height: 30%; top: 43%; }
+.guide-side .guide-target { width: 34%; height: 68%; left: 68%; border-radius: 16px; }
+.guide-connectors { width: 76%; height: 36%; top: 43%; }
+.guide-connectors .guide-target { width: 44%; height: 46%; left: 64%; top: 58%; border-radius: 999px; }
+.guide-connectors .guide-target::before { content: "●●"; font-size: 18px; letter-spacing: 2px; }
+.part-shape-guide[data-direction="right"] .guide-arrow { left: calc(100% + 28px); top: 50%; transform: translate(-50%, -50%); }
+.part-shape-guide[data-direction="right"] .guide-action { bottom: -50px; }
+.part-shape-guide[data-direction="lower"] .guide-arrow { left: 76%; top: 85%; transform: translate(-50%, -50%); }
+.part-shape-guide[data-direction="closer"] .guide-arrow { top: -54px; }
 .bottom-status { position: fixed; z-index: 60; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); border-radius: 22px; padding: 12px; background: rgba(7,10,8,.64); border: 1px solid rgba(255,255,255,.1); box-shadow: 0 18px 58px rgba(0,0,0,.34); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .status-line { color: #fff; text-align: center; font-size: 14px; font-weight: 950; line-height: 1.25; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .guidance { color: rgba(246,250,245,.78); text-align: center; font-size: 13px; line-height: 1.25; padding: 0 6px 10px; }
@@ -87,4 +104,5 @@ h1 { font-size: 24px; line-height: 1.05; letter-spacing: -.04em; }
 .micro-button.warn { background: rgba(166,95,0,.2); color: var(--warn); }
 .empty { color: var(--muted); text-align: center; padding: 30px 8px; }
 @media (min-width: 760px) { .scan-page, .catalog-page { max-width: 480px; margin: 0 auto; } .catalog-link { right: calc(50% - 230px); } .scan-hint, .bottom-status { left: calc(50% - 230px); right: calc(50% - 230px); } }
-@media (max-height: 760px) { .part-shape-guide { top: 42%; } .shape-caption { bottom: -36px; font-size: 12px; } .bottom-status { padding: 10px; } .guidance { font-size: 12px; padding-bottom: 8px; } }
+@media (max-width: 430px) { .part-shape-guide { width: 80%; } .guide-action { max-width: 86vw; font-size: 12px; } .shape-caption { max-width: 82vw; overflow: hidden; text-overflow: ellipsis; } .part-shape-guide[data-direction="right"] .guide-arrow { left: calc(100% + 18px); } }
+@media (max-height: 760px) { .part-shape-guide { top: 42%; } .guide-arrow { top: -46px; width: 40px; height: 40px; font-size: 21px; } .guide-action { bottom: -42px; font-size: 12px; padding: 7px 10px; } .shape-caption { bottom: -72px; font-size: 11px; } .bottom-status { padding: 10px; } .guidance { font-size: 12px; padding-bottom: 8px; } }
