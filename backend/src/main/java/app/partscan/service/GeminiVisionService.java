@@ -23,7 +23,7 @@ import java.util.Map;
 @Service
 public class GeminiVisionService {
  private static final Logger log = LoggerFactory.getLogger(GeminiVisionService.class);
- private static final int MAX_ATTEMPTS = 3;
+ private static final int MAX_ATTEMPTS = 2;
 
  private final RestClient restClient;
  private final ObjectMapper objectMapper;
@@ -59,11 +59,19 @@ public class GeminiVisionService {
   parts.add(Map.of("text", prompt(files.size())));
   int index = 1;
   for (MultipartFile file : files) {
-   parts.add(Map.of("text", "Image " + index + " of " + files.size() + ": analyze this angle as additional evidence."));
+   parts.add(Map.of("text", "image " + index));
    parts.add(Map.of("inlineData", Map.of("mimeType", contentType(file), "data", Base64.getEncoder().encodeToString(file.getBytes()))));
    index++;
   }
-  return Map.of("contents", List.of(Map.of("role", "user", "parts", parts)), "generationConfig", Map.of("responseMimeType", "application/json", "responseSchema", schema()));
+  return Map.of(
+   "contents", List.of(Map.of("role", "user", "parts", parts)),
+   "generationConfig", Map.of(
+    "responseMimeType", "application/json",
+    "responseSchema", schema(),
+    "temperature", 0,
+    "maxOutputTokens", 650
+   )
+  );
  }
 
  private String executeWithRetry(Map<String, Object> body) {
@@ -88,7 +96,7 @@ public class GeminiVisionService {
  }
 
  private void sleepBeforeRetry(int attempt) {
-  long delayMillis = attempt == 1 ? 1800 : 4200;
+  long delayMillis = attempt == 1 ? 1200 : 2800;
   try { Thread.sleep(delayMillis); } catch (InterruptedException interruptedException) { Thread.currentThread().interrupt(); throw new IllegalStateException("Gemini retry was interrupted", interruptedException); }
  }
 
@@ -104,19 +112,13 @@ public class GeminiVisionService {
 
  private String prompt(int imageCount) {
   return """
-   You are a careful automotive spare parts catalog expert for a workshop and dismantling yard.
-   First decide whether the image contains an automotive spare part, a vehicle component, or a part still installed in a car.
-   If the image mostly contains unrelated objects, furniture, hands, keyboard, screen, floor, room, packaging without visible part, or a random non-car object, return automotivePart=false, confidence=0, needsBetterPhoto=true, empty vehicle lists, and do not invent a part.
-   If automotivePart=false, name must be "Не автодеталь", normalizedName must be "not_part", category must be "not_part", and identificationReason must explain in Russian why it is not saved.
-   You may receive one image or multiple images of the same part from different camera angles. Treat all images as the same physical part or installed vehicle node.
-   Analyze only visible evidence. Do not invent article numbers, brands, vehicle models, or exact fitment.
-   Return Russian text for mechanic-facing fields, but preserve brand names, numbers, codes, and markings exactly as visible.
-   confidence must reflect visible evidence, not guesswork. Use below 0.9 unless markings, shape, ports, and context strongly agree.
-   needsBetterPhoto must be true when another camera angle, closer marking photo, or better light is required.
-   Never ask the user to flip, remove, rotate, or disassemble the part. This is an auto dismantling / installed-car workflow: engines, gearboxes, ABS blocks, bumpers, modules, and harnesses may be mounted and heavy.
-   For imageCount=%d, if automotivePart=true and confidence is below 0.9, photoTips must ask for practical camera movement only: move camera left/right, shoot from above, shoot from lower angle, close-up of marking, close-up of connector/ports, close-up of mounting points, add light.
-   identificationReason must explain the key visual clues in one concise Russian sentence.
-   alternatives must include up to 3 plausible alternative identifications when confidence is below 0.9 or the part may be confused with another part.
+   Identify an automotive spare part or installed vehicle component from %d image(s). Return ONLY compact JSON matching schema.
+   Russian fields. Preserve visible brands/numbers exactly.
+   If not an automotive part: automotivePart=false, name=\"Не автодеталь\", normalizedName=\"not_part\", category=\"not_part\", confidence=0, needsBetterPhoto=true.
+   Do not invent part numbers, brands, vehicle fitment, or condition. Use unknown/empty arrays when not visible.
+   confidence>=0.9 only when visual evidence is strong. needsBetterPhoto=true if a closer marking, connector, port, mounting point, side angle, or better light is needed.
+   Never ask to flip/remove/disassemble the part; suggest only moving the camera.
+   Keep description, identificationReason, photoTips, sourceHints, and alternatives very short.
    """.formatted(imageCount);
  }
 
