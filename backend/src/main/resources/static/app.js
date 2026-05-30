@@ -19,6 +19,8 @@ const readyOverlay = document.getElementById('readyOverlay');
 const startScanButton = document.getElementById('startScanButton');
 const scanButton = document.getElementById('scanAngleButton');
 
+const FAST_IMAGE_MAX_EDGE = 1024;
+const FAST_IMAGE_QUALITY = 0.74;
 const SAVED_SCAN_COOLDOWN_MS = 1_200;
 const REJECTED_SCAN_COOLDOWN_MS = 1_200;
 const ERROR_SCAN_COOLDOWN_MS = 2_000;
@@ -61,8 +63,8 @@ async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1440 },
+        width: { ideal: 1280 },
+        height: { ideal: 960 },
         focusMode: { ideal: 'continuous' }
       },
       audio: false
@@ -189,13 +191,15 @@ function fail(reason, hint) {
 async function captureBlob() {
   const sourceWidth = video.videoWidth || 1280;
   const sourceHeight = video.videoHeight || 720;
-  const scale = Math.min(1, 1500 / Math.max(sourceWidth, sourceHeight));
+  const scale = Math.min(1, FAST_IMAGE_MAX_EDGE / Math.max(sourceWidth, sourceHeight));
   const width = Math.round(sourceWidth * scale);
   const height = Math.round(sourceHeight * scale);
   canvas.width = width;
   canvas.height = height;
   canvas.getContext('2d').drawImage(video, 0, 0, width, height);
-  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', FAST_IMAGE_QUALITY));
+  console.info(`PartScan image prepared: ${width}x${height}, ${Math.round((blob?.size || 0) / 1024)} KB`);
+  return blob;
 }
 
 async function submitScan(blobs, refine) {
