@@ -17,29 +17,31 @@ const scanOverlay = document.getElementById('scanOverlay');
 const scanOverlayText = document.getElementById('scanOverlayText');
 const readyOverlay = document.getElementById('readyOverlay');
 const startScanButton = document.getElementById('startScanButton');
+const scanAngleButton = document.getElementById('scanAngleButton');
 
 const SCANNER_TICK_MS = 420;
 const REQUIRED_STABLE_TICKS = 2;
-const NORMAL_SCAN_COOLDOWN_MS = 5_000;
-const SAVED_SCAN_COOLDOWN_MS = 9_000;
-const REJECTED_SCAN_COOLDOWN_MS = 12_000;
-const ERROR_SCAN_COOLDOWN_MS = 7_000;
-const RATE_LIMIT_COOLDOWN_MS = 8_000;
-const ANGLE_CAPTURE_COOLDOWN_MS = 900;
+const NORMAL_SCAN_COOLDOWN_MS = 1_200;
+const SAVED_SCAN_COOLDOWN_MS = 3_000;
+const REJECTED_SCAN_COOLDOWN_MS = 3_000;
+const ERROR_SCAN_COOLDOWN_MS = 4_000;
+const RATE_LIMIT_COOLDOWN_MS = 5_000;
 const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 12;
-const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 7;
+const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 4;
+const MAX_MANUAL_ANGLES = 3;
 
 const angleSteps = [
   { short: 'целиком', guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Общий вид', hint: 'Держите деталь или узел в большой рамке', caption: 'общий вид детали', action: 'поместите деталь в центр' },
   { short: 'маркировка', guide: 'guide-marking', direction: 'closer', arrow: '↓', title: 'Маркировка', hint: 'Подведите камеру к номеру, наклейке или логотипу', caption: 'номер / наклейка / логотип', action: 'покажите номер крупнее' },
-  { short: 'сбоку', guide: 'guide-side', direction: 'right', arrow: '→', title: 'Боковой угол', hint: 'Сместите камеру левее или правее, деталь трогать не нужно', caption: 'камера под углом сбоку', action: 'сместитесь камерой в сторону' },
-  { short: 'разъёмы', guide: 'guide-connectors', direction: 'lower', arrow: '↘', title: 'Разъёмы / крепления', hint: 'Подведите камеру к фишкам, портам, трубкам или креплениям', caption: 'разъёмы / фишки / крепления', action: 'покажите места подключения' }
+  { short: 'разъёмы', guide: 'guide-connectors', direction: 'lower', arrow: '↘', title: 'Разъёмы / крепления', hint: 'Подведите камеру к фишкам, портам, трубкам или креплениям', caption: 'разъёмы / фишки / крепления', action: 'покажите места подключения' },
+  { short: 'сбоку', guide: 'guide-side', direction: 'right', arrow: '→', title: 'Боковой угол', hint: 'Сместите камеру левее или правее, деталь трогать не нужно', caption: 'камера под углом сбоку', action: 'сместитесь камерой в сторону' }
 ];
 
 let stream;
 let scannerTimer;
 let scanning = false;
 let scanArmed = false;
+let waitingManualAngle = false;
 let pausedUntil = 0;
 let pauseReason = '';
 let previousFingerprint = null;
@@ -47,20 +49,21 @@ let stableScore = 0;
 let capturedAngles = [];
 let capturedAngleFingerprints = [];
 let currentAngleIndex = 0;
-let multiAngleMode = false;
 let lastSubmittedFingerprint = null;
 let lastRejectedFingerprint = null;
 let lastCaptureFingerprint = null;
-let lastAiRequestAt = 0;
 let preliminaryPartName = '';
 let preliminaryPartConfidence = 0;
 
 startScanButton?.addEventListener('click', armScanner);
+scanAngleButton?.addEventListener('click', scanManualAngle);
 startCamera();
 
 async function startCamera() {
   stopCamera();
   scanArmed = false;
+  waitingManualAngle = false;
+  setManualScanButton(false);
   setOverlay(false);
   setReadyOverlay(false);
   setStatus('Запрашиваю камеру', 'Разрешите доступ к камере');
@@ -87,8 +90,10 @@ async function startCamera() {
 
 function armScanner() {
   scanArmed = true;
+  waitingManualAngle = false;
+  setManualScanButton(false);
   setReadyOverlay(false);
-  setStatus('Ищу деталь', 'Держите автодеталь внутри контура');
+  setStatus('Ищу деталь', 'Первый кадр поймаю автоматически');
   tg?.HapticFeedback?.impactOccurred('light');
   startAutoScanner();
 }
@@ -102,7 +107,7 @@ function stopCamera() {
 function startAutoScanner() {
   if (scannerTimer) clearInterval(scannerTimer);
   scannerTimer = setInterval(async () => {
-    if (!scanArmed || !video.videoWidth || scanning) return;
+    if (!scanArmed || waitingManualAngle || !video.videoWidth || scanning) return;
 
     const now = Date.now();
     const metrics = sampleFrameMetrics();
@@ -119,7 +124,7 @@ function startAutoScanner() {
 
     if (!ready.ok) {
       statusLabel.textContent = ready.reason;
-      guidance.textContent = multiAngleMode ? angleSteps[currentAngleIndex].hint : ready.hint;
+      guidance.textContent = ready.hint;
       return;
     }
 
@@ -137,8 +142,7 @@ function startAutoScanner() {
 
     if (stableScore >= REQUIRED_STABLE_TICKS) {
       stableScore = 0;
-      if (multiAngleMode) await captureAngle(metrics.fingerprint);
-      else await submitScan([await captureBlob()], metrics.fingerprint);
+      await submitScan([await captureBlob()], metrics.fingerprint, false);
     }
   }, SCANNER_TICK_MS);
 }
@@ -151,13 +155,13 @@ function resetScannerMemory() {
   capturedAngles = [];
   capturedAngleFingerprints = [];
   currentAngleIndex = 0;
-  multiAngleMode = false;
   lastSubmittedFingerprint = null;
   lastRejectedFingerprint = null;
   lastCaptureFingerprint = null;
-  lastAiRequestAt = 0;
   preliminaryPartName = '';
   preliminaryPartConfidence = 0;
+  waitingManualAngle = false;
+  setManualScanButton(false);
   if (progressLine) progressLine.style.width = '8%';
 }
 
@@ -202,14 +206,6 @@ function fail(metrics, reason, hint) {
 }
 
 function duplicateFrameGuard(metrics) {
-  if (multiAngleMode) {
-    const previousAngleFingerprint = capturedAngleFingerprints[capturedAngleFingerprints.length - 1];
-    if (previousAngleFingerprint != null && fingerprintDelta(metrics.fingerprint, previousAngleFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-      return { ok: false, reason: 'Смените позицию камеры', hint: angleSteps[currentAngleIndex].hint };
-    }
-    return { ok: true };
-  }
-
   if (lastSubmittedFingerprint != null && fingerprintDelta(metrics.fingerprint, lastSubmittedFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN) {
     return { ok: false, reason: 'Кадр уже проверен', hint: 'Сместите камеру или покажите другую часть детали' };
   }
@@ -254,14 +250,14 @@ async function captureBlob() {
   return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
 }
 
-async function submitScan(blobs, fingerprint = null) {
+async function submitScan(blobs, fingerprint = null, manualAngle = false) {
   if (scanning) return;
   scanning = true;
-  setOverlay(true, blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализирую кадр');
-  lastAiRequestAt = Date.now();
+  setManualScanButton(false);
+  setOverlay(true, blobs.length > 1 ? `Анализ ${blobs.length} кадров` : 'Анализирую кадр');
   if (fingerprint != null) lastSubmittedFingerprint = fingerprint;
   setCooldown(NORMAL_SCAN_COOLDOWN_MS, 'Анализ кадра');
-  setStatus(blobs.length > 1 ? `Анализ ${blobs.length} ракурсов` : 'Анализ кадра', 'Ждём ответ модели');
+  setStatus(blobs.length > 1 ? `Анализ ${blobs.length} кадров` : 'Анализ кадра', 'Ждём ответ модели');
 
   try {
     const form = new FormData();
@@ -284,8 +280,8 @@ async function submitScan(blobs, fingerprint = null) {
       return;
     }
 
-    handleScanResult(payload.part);
-    tg?.HapticFeedback?.notificationOccurred('success');
+    handleScanResult(payload.part, payload.status, payload.nextAction, manualAngle);
+    tg?.HapticFeedback?.notificationOccurred(payload.status === 'saved' ? 'success' : 'warning');
   } catch (error) {
     setStatus('Ошибка анализа', error.message || 'Попробуйте ещё раз');
     setCooldown(ERROR_SCAN_COOLDOWN_MS, 'Пауза после ошибки');
@@ -296,28 +292,27 @@ async function submitScan(blobs, fingerprint = null) {
   }
 }
 
-function handleScanResult(part) {
+function handleScanResult(part, status, nextAction, manualAngle) {
   const confidence = part?.confidence || 0;
   const percent = Math.round(confidence * 100);
   const name = compactPartName(part?.name || part?.normalizedName || 'Деталь');
 
-  if (confidence < 0.9 || part?.needsBetterPhoto) {
+  if (status === 'needs_angle' || confidence < 0.9 || part?.needsBetterPhoto) {
     preliminaryPartName = name;
     preliminaryPartConfidence = percent;
-    setStatus(`${name} · ${percent}%`, 'Предварительно найдено и сохранено. Для точности покажите ещё одну зону детали');
-    enterMultiAngleMode(name, percent);
+    if (!manualAngle && capturedAngles.length === 0) capturedAngles.pushCurrent = true;
+    enterManualAngleMode(name, percent, nextAction);
     return;
   }
 
-  preliminaryPartName = '';
-  preliminaryPartConfidence = 0;
-  setStatus(`${name} · ${percent}%`, 'Сохранено в базе');
-  resetMultiAngleMode();
+  setStatus(`${name} · ${percent}%`, 'Готово. Сохранено в базе');
+  resetScannerMemory();
+  setCoach(angleSteps[0]);
   setCooldown(SAVED_SCAN_COOLDOWN_MS, 'Деталь сохранена');
 }
 
 function showRejected(payload) {
-  resetMultiAngleMode();
+  resetScannerMemory();
   setCoach({ guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Это не автодеталь', hint: payload.nextAction || 'Наведите камеру на автомобильную деталь', caption: 'автодеталь / узел', action: 'покажите деталь машины' });
   setStatus('Не сохраняю в базу', payload.message || 'В кадре не похожая на автодеталь вещь');
   setCooldown(REJECTED_SCAN_COOLDOWN_MS, 'Не автодеталь');
@@ -326,63 +321,57 @@ function showRejected(payload) {
 function showRateLimited(payload) {
   setStatus('Слишком часто', payload.message || 'Нужно немного подождать');
   setCooldown(RATE_LIMIT_COOLDOWN_MS, 'Лимит защиты');
+  if (waitingManualAngle) setManualScanButton(true);
 }
 
-function enterMultiAngleMode(name = preliminaryPartName, percent = preliminaryPartConfidence) {
-  multiAngleMode = true;
-  capturedAngles = [];
-  capturedAngleFingerprints = [];
-  currentAngleIndex = 0;
+function enterManualAngleMode(name, percent, nextAction) {
+  waitingManualAngle = true;
+  scanArmed = true;
+  currentAngleIndex = Math.min(capturedAngles.length + 1, angleSteps.length - 1);
   setCoach(angleSteps[currentAngleIndex]);
-  if (name) {
-    angleTitle.textContent = `Найдено: ${name}`;
-    shapeCaption.textContent = `${percent}% · нужен доп. ракурс`;
-    guideAction.textContent = 'теперь покажите нужную зону';
-  }
-  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Подготовьте позицию камеры');
+  angleTitle.textContent = `Найдено: ${name}`;
+  shapeCaption.textContent = `${percent}% · нужен ракурс`;
+  guideAction.textContent = nextAction || angleSteps[currentAngleIndex].action;
+  setStatus(`${name} · ${percent}%`, `${nextAction || angleSteps[currentAngleIndex].hint}. Наведите камеру и нажмите “Сканировать ракурс”.`);
+  setManualScanButton(true);
+  if (progressLine) progressLine.style.width = '100%';
 }
 
-async function captureAngle(fingerprint) {
-  if (fingerprint != null && lastCaptureFingerprint != null && fingerprintDelta(fingerprint, lastCaptureFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-    setStatus('Позиция почти та же', angleSteps[currentAngleIndex].hint);
-    setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Сместите камеру');
+async function scanManualAngle() {
+  if (scanning || !waitingManualAngle || !video.videoWidth) return;
+  const metrics = sampleFrameMetrics();
+  const ready = isFrameReady(metrics);
+  if (!ready.ok) {
+    setStatus(ready.reason, ready.hint);
+    setManualScanButton(true);
     return;
   }
 
-  capturedAngles.push(await captureBlob());
-  if (fingerprint != null) {
-    capturedAngleFingerprints.push(fingerprint);
-    lastCaptureFingerprint = fingerprint;
-  }
-  tg?.HapticFeedback?.impactOccurred('light');
-
-  if (capturedAngles.length >= angleSteps.length) {
-    const blobs = [...capturedAngles];
-    const finalFingerprint = fingerprint ?? lastCaptureFingerprint;
-    resetMultiAngleMode(false);
-    await submitScan(blobs, finalFingerprint);
+  if (lastCaptureFingerprint != null && fingerprintDelta(metrics.fingerprint, lastCaptureFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
+    setStatus('Позиция почти та же', 'Сместите камеру к маркировке, разъёму или креплению');
+    setManualScanButton(true);
     return;
   }
 
-  currentAngleIndex = capturedAngles.length;
-  setCoach(angleSteps[currentAngleIndex]);
-  if (preliminaryPartName) {
-    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, `${capturedAngles.length}/${angleSteps.length} зон · ${angleSteps[currentAngleIndex].hint}`);
-  } else {
-    setStatus(`${capturedAngles.length}/${angleSteps.length} зон снято`, angleSteps[currentAngleIndex].hint);
+  const blob = await captureBlob();
+  capturedAngles.push(blob);
+  capturedAngleFingerprints.push(metrics.fingerprint);
+  lastCaptureFingerprint = metrics.fingerprint;
+
+  const packageForAi = [...capturedAngles];
+  setStatus(`Ракурс ${capturedAngles.length}/${MAX_MANUAL_ANGLES}`, 'Отправляю уточнение в AI');
+  await submitScan(packageForAi, metrics.fingerprint, true);
+
+  if (waitingManualAngle && capturedAngles.length >= MAX_MANUAL_ANGLES) {
+    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, 'Точности всё ещё мало. Попробуйте другую деталь или крупнее покажите маркировку');
+    setManualScanButton(true, 'Сканировать ещё раз');
   }
-  setCooldown(ANGLE_CAPTURE_COOLDOWN_MS, 'Смените позицию камеры');
 }
 
-function resetMultiAngleMode(resetCoach = true) {
-  multiAngleMode = false;
-  capturedAngles = [];
-  capturedAngleFingerprints = [];
-  currentAngleIndex = 0;
-  lastCaptureFingerprint = null;
-  preliminaryPartName = '';
-  preliminaryPartConfidence = 0;
-  if (resetCoach) setCoach(angleSteps[0]);
+function setManualScanButton(show, text = 'Сканировать ракурс') {
+  if (!scanAngleButton) return;
+  scanAngleButton.hidden = !show;
+  scanAngleButton.textContent = text;
 }
 
 function setCoach(step) {
@@ -393,10 +382,6 @@ function setCoach(step) {
   shapeCaption.textContent = step.caption || '';
   if (guideAction) guideAction.textContent = step.action || step.hint || '';
   if (guideArrow) guideArrow.textContent = step.arrow || '◎';
-}
-
-function setShape(shapeClass, caption) {
-  setCoach({ guide: shapeClass, direction: 'center', arrow: '◎', title: angleTitle.textContent || '', hint: angleHint.textContent || '', caption, action: caption || '' });
 }
 
 function setStatus(status, hint) {
