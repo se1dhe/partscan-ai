@@ -16,7 +16,8 @@ catalogSearch.addEventListener('input', event => {
 async function loadParts() {
   const response = await fetch('/api/v1/parts');
   allParts = response.ok ? await response.json() : [];
-  catalogMeta.textContent = `${allParts.length} сканов`;
+  const lastScan = allParts.length ? relativeTime(latestDate(allParts.map(part => part.createdAt || part.updatedAt))) : 'нет сканов';
+  catalogMeta.textContent = `${allParts.length} сканов · последний: ${lastScan}`;
   renderCategoryFilters();
   renderParts();
 }
@@ -46,7 +47,8 @@ function renderParts() {
         .join(' ')
         .toLowerCase()
         .includes(searchQuery);
-    });
+    })
+    .sort((a, b) => dateValue(b.createdAt || b.updatedAt) - dateValue(a.createdAt || a.updatedAt));
 
   partsList.innerHTML = visibleParts.length ? visibleParts.map(renderPart).join('') : '<div class="empty">Ничего не найдено</div>';
 }
@@ -59,13 +61,18 @@ function renderPart(part) {
   const title = escapeHtml(part.name || 'Неизвестная деталь');
   const meta = [part.manufacturer, part.articleNumber, part.category].filter(Boolean).join(' · ') || 'Без уточнений';
   const status = part.reviewStatus || 'pending';
+  const scanTime = relativeTime(part.createdAt || part.updatedAt);
+  const absoluteTime = formatDate(part.createdAt || part.updatedAt);
   return `
     <article class="part-card" data-part-id="${escapeHtml(part.id)}">
       <div class="part-head">
         <div><div class="part-name">${title}</div><div class="meta">${escapeHtml(meta)}</div></div>
         <div class="confidence">${confidence}%</div>
       </div>
-      <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
+      <div class="card-meta-row">
+        <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
+        <span class="scan-time" title="${escapeHtml(absoluteTime)}">скан: ${escapeHtml(scanTime)}</span>
+      </div>
       <div class="meta">${escapeHtml(part.description || '')}</div>
       ${part.identificationReason ? `<div class="detail-box"><strong>Почему так:</strong><div class="meta">${escapeHtml(part.identificationReason)}</div></div>` : ''}
       ${markings.length ? `<div class="detail-box"><strong>Маркировка:</strong><div class="tags">${markings.map(item => `<span class="tag">${escapeHtml(item)}</span>`).join('')}</div></div>` : ''}
@@ -98,6 +105,36 @@ async function sendReview(id, payload) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   });
   if (response.ok) await loadParts();
+}
+
+function latestDate(values) {
+  return values.filter(Boolean).sort((a, b) => dateValue(b) - dateValue(a))[0];
+}
+
+function dateValue(value) {
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function relativeTime(value) {
+  const time = dateValue(value);
+  if (!time) return 'неизвестно';
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (diffSeconds < 20) return 'только что';
+  if (diffSeconds < 60) return `${diffSeconds} сек назад`;
+  const minutes = Math.floor(diffSeconds / 60);
+  if (minutes < 60) return `${minutes} мин назад`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ч назад`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} д назад`;
+  return formatDate(value);
+}
+
+function formatDate(value) {
+  const time = dateValue(value);
+  if (!time) return 'неизвестно';
+  return new Date(time).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 function parseList(value) {
