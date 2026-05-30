@@ -15,6 +15,10 @@ public record ScanResponse(String status, Part part, String message, String next
   return new ScanResponse("rate_limited", null, message, nextAction);
  }
 
+ public static ScanResponse needsAngle(Part part, String message, String nextAction) {
+  return new ScanResponse("needs_angle", part, message, nextAction);
+ }
+
  public static ScanResponse saved(Part part) {
   return new ScanResponse("saved", part, null, null);
  }
