@@ -24,29 +24,29 @@
         <div id="readyOverlay" class="ready-overlay" hidden>
           <div class="ready-card">
             <div class="ready-kicker">Камера готова</div>
-            <div class="ready-title">Начать сканирование?</div>
-            <div class="ready-text">Первый кадр поймаем автоматически. Если точности не хватит — следующий ракурс снимете кнопкой.</div>
-            <button id="startScanButton" class="start-scan-button" type="button">Начать сканирование</button>
+            <div class="ready-title">Быстрый скан</div>
+            <div class="ready-text">Наведите камеру на деталь и нажмите “СКАН”. Автозахвата больше нет — кадр отправляется только по кнопке.</div>
+            <button id="startScanButton" class="start-scan-button" type="button">Перейти к скану</button>
           </div>
         </div>
 
         <div id="partShapeGuide" class="part-shape-guide guide-overview" data-direction="center">
           <div class="guide-corners"></div>
           <div id="guideTarget" class="guide-target"></div>
-          <div id="guideArrow" class="guide-arrow">↓</div>
-          <div id="guideAction" class="guide-action">поместите деталь в центр</div>
-          <div id="shapeCaption" class="shape-caption">общий вид детали</div>
+          <div id="guideArrow" class="guide-arrow">◎</div>
+          <div id="guideAction" class="guide-action">наведите и нажмите СКАН</div>
+          <div id="shapeCaption" class="shape-caption">быстрый ручной режим</div>
         </div>
 
         <div class="scan-hint">
-          <div id="angleTitle" class="angle-title">Наведи на автодеталь</div>
-          <div id="angleHint" class="angle-hint">Захват произойдёт автоматически</div>
+          <div id="angleTitle" class="angle-title">Быстрый скан</div>
+          <div id="angleHint" class="angle-hint">Нажмите СКАН, когда деталь в кадре</div>
         </div>
 
         <div class="bottom-status">
           <div id="status" class="status-line">Камера запускается</div>
-          <div id="guidance" class="guidance">Держите деталь внутри контура</div>
-          <button id="scanAngleButton" class="scan-angle-button" type="button" hidden>Сканировать ракурс</button>
+          <div id="guidance" class="guidance">Наведите камеру на деталь</div>
+          <button id="scanAngleButton" class="scan-angle-button" type="button" hidden>СКАН</button>
           <div id="progressLine" class="progress-line"><span></span></div>
         </div>
       </div>
