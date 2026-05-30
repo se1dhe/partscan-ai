@@ -27,7 +27,6 @@ const REJECTED_SCAN_COOLDOWN_MS = 3_000;
 const ERROR_SCAN_COOLDOWN_MS = 4_000;
 const RATE_LIMIT_COOLDOWN_MS = 5_000;
 const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 12;
-const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 4;
 const MAX_SCAN_FRAMES = 4;
 
 const angleSteps = [
@@ -51,12 +50,15 @@ let capturedAngleFingerprints = [];
 let currentAngleIndex = 0;
 let lastSubmittedFingerprint = null;
 let lastRejectedFingerprint = null;
-let lastCaptureFingerprint = null;
 let preliminaryPartName = '';
 let preliminaryPartConfidence = 0;
 
 startScanButton?.addEventListener('click', armScanner);
 scanAngleButton?.addEventListener('click', scanManualAngle);
+scanAngleButton?.addEventListener('touchend', event => {
+  event.preventDefault();
+  scanManualAngle();
+}, { passive: false });
 startCamera();
 
 async function startCamera() {
@@ -119,7 +121,7 @@ function startAutoScanner() {
       return;
     }
 
-    const ready = isFrameReady(metrics);
+    const ready = isFrameReady(metrics, false);
     updateProgress(metrics, ready);
 
     if (!ready.ok) {
@@ -157,7 +159,6 @@ function resetScannerMemory() {
   currentAngleIndex = 0;
   lastSubmittedFingerprint = null;
   lastRejectedFingerprint = null;
-  lastCaptureFingerprint = null;
   preliminaryPartName = '';
   preliminaryPartConfidence = 0;
   waitingManualAngle = false;
@@ -192,11 +193,11 @@ function sampleFrameMetrics() {
   return { brightness, contrast, motion, fingerprint };
 }
 
-function isFrameReady(metrics) {
+function isFrameReady(metrics, requireStableMotion = true) {
   if (metrics.brightness < 42) return fail(metrics, 'Темно', 'Добавьте свет или фонарик');
   if (metrics.brightness > 232) return fail(metrics, 'Блик', 'Сместите камеру от блика');
   if (metrics.contrast < 6) return fail(metrics, 'Не в фокусе', 'Подведите камеру ближе к детали');
-  if (metrics.motion > 46) return fail(metrics, 'Камера движется', 'На секунду зафиксируйте телефон');
+  if (requireStableMotion && metrics.motion > 46) return fail(metrics, 'Камера движется', 'На секунду зафиксируйте телефон');
   return { ...metrics, ok: true, reason: 'Кадр подходит', hint: 'Не двигайте телефон' };
 }
 
@@ -285,6 +286,7 @@ async function submitScan(blobs, fingerprint = null, manualAngle = false) {
   } catch (error) {
     setStatus('Ошибка анализа', error.message || 'Попробуйте ещё раз');
     setCooldown(ERROR_SCAN_COOLDOWN_MS, 'Пауза после ошибки');
+    if (waitingManualAngle) setManualScanButton(true);
     tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
     scanning = false;
@@ -302,10 +304,7 @@ function handleScanResult(part, status, nextAction, manualAngle, sourceBlobs = [
     preliminaryPartConfidence = percent;
     if (!manualAngle && capturedAngles.length === 0) {
       capturedAngles = [...sourceBlobs];
-      if (fingerprint != null) {
-        capturedAngleFingerprints = [fingerprint];
-        lastCaptureFingerprint = fingerprint;
-      }
+      if (fingerprint != null) capturedAngleFingerprints = [fingerprint];
     }
     enterManualAngleMode(name, percent, nextAction);
     return;
@@ -344,17 +343,28 @@ function enterManualAngleMode(name, percent, nextAction) {
 }
 
 async function scanManualAngle() {
-  if (scanning || !waitingManualAngle || !video.videoWidth) return;
-  const metrics = sampleFrameMetrics();
-  const ready = isFrameReady(metrics);
-  if (!ready.ok) {
-    setStatus(ready.reason, ready.hint);
+  if (!waitingManualAngle) {
+    setStatus('Ракурс не требуется', 'Сначала выполните первый скан детали');
+    return;
+  }
+  if (!video.videoWidth) {
+    setStatus('Камера не готова', 'Подождите запуск камеры');
     setManualScanButton(true);
     return;
   }
+  if (scanning) {
+    setStatus('Уже сканирую', 'Дождитесь ответа модели');
+    return;
+  }
 
-  if (lastCaptureFingerprint != null && fingerprintDelta(metrics.fingerprint, lastCaptureFingerprint) < MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE) {
-    setStatus('Позиция почти та же', 'Сместите камеру к маркировке, разъёму или креплению');
+  setManualScanButton(false);
+  setStatus('Снимаю ракурс', 'Держите камеру на нужной зоне');
+  tg?.HapticFeedback?.impactOccurred('light');
+
+  const metrics = sampleFrameMetrics();
+  const ready = isFrameReady(metrics, false);
+  if (!ready.ok) {
+    setStatus(ready.reason, ready.hint);
     setManualScanButton(true);
     return;
   }
@@ -362,7 +372,6 @@ async function scanManualAngle() {
   const blob = await captureBlob();
   capturedAngles.push(blob);
   capturedAngleFingerprints.push(metrics.fingerprint);
-  lastCaptureFingerprint = metrics.fingerprint;
 
   const packageForAi = [...capturedAngles];
   setStatus(`Кадров ${capturedAngles.length}/${MAX_SCAN_FRAMES}`, 'Отправляю уточнение в AI');
@@ -377,6 +386,7 @@ async function scanManualAngle() {
 function setManualScanButton(show, text = 'Сканировать ракурс') {
   if (!scanAngleButton) return;
   scanAngleButton.hidden = !show;
+  scanAngleButton.disabled = !show || scanning;
   scanAngleButton.textContent = text;
 }
 
