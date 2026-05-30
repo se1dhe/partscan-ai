@@ -28,7 +28,7 @@ const ERROR_SCAN_COOLDOWN_MS = 4_000;
 const RATE_LIMIT_COOLDOWN_MS = 5_000;
 const MIN_FINGERPRINT_DELTA_FOR_NEW_SCAN = 12;
 const MIN_FINGERPRINT_DELTA_FOR_NEXT_ANGLE = 4;
-const MAX_MANUAL_ANGLES = 3;
+const MAX_SCAN_FRAMES = 4;
 
 const angleSteps = [
   { short: 'целиком', guide: 'guide-overview', direction: 'center', arrow: '◎', title: 'Общий вид', hint: 'Держите деталь или узел в большой рамке', caption: 'общий вид детали', action: 'поместите деталь в центр' },
@@ -280,7 +280,7 @@ async function submitScan(blobs, fingerprint = null, manualAngle = false) {
       return;
     }
 
-    handleScanResult(payload.part, payload.status, payload.nextAction, manualAngle);
+    handleScanResult(payload.part, payload.status, payload.nextAction, manualAngle, blobs, fingerprint);
     tg?.HapticFeedback?.notificationOccurred(payload.status === 'saved' ? 'success' : 'warning');
   } catch (error) {
     setStatus('Ошибка анализа', error.message || 'Попробуйте ещё раз');
@@ -292,7 +292,7 @@ async function submitScan(blobs, fingerprint = null, manualAngle = false) {
   }
 }
 
-function handleScanResult(part, status, nextAction, manualAngle) {
+function handleScanResult(part, status, nextAction, manualAngle, sourceBlobs = [], fingerprint = null) {
   const confidence = part?.confidence || 0;
   const percent = Math.round(confidence * 100);
   const name = compactPartName(part?.name || part?.normalizedName || 'Деталь');
@@ -300,7 +300,13 @@ function handleScanResult(part, status, nextAction, manualAngle) {
   if (status === 'needs_angle' || confidence < 0.9 || part?.needsBetterPhoto) {
     preliminaryPartName = name;
     preliminaryPartConfidence = percent;
-    if (!manualAngle && capturedAngles.length === 0) capturedAngles.pushCurrent = true;
+    if (!manualAngle && capturedAngles.length === 0) {
+      capturedAngles = [...sourceBlobs];
+      if (fingerprint != null) {
+        capturedAngleFingerprints = [fingerprint];
+        lastCaptureFingerprint = fingerprint;
+      }
+    }
     enterManualAngleMode(name, percent, nextAction);
     return;
   }
@@ -327,7 +333,7 @@ function showRateLimited(payload) {
 function enterManualAngleMode(name, percent, nextAction) {
   waitingManualAngle = true;
   scanArmed = true;
-  currentAngleIndex = Math.min(capturedAngles.length + 1, angleSteps.length - 1);
+  currentAngleIndex = Math.min(capturedAngles.length, angleSteps.length - 1);
   setCoach(angleSteps[currentAngleIndex]);
   angleTitle.textContent = `Найдено: ${name}`;
   shapeCaption.textContent = `${percent}% · нужен ракурс`;
@@ -359,11 +365,11 @@ async function scanManualAngle() {
   lastCaptureFingerprint = metrics.fingerprint;
 
   const packageForAi = [...capturedAngles];
-  setStatus(`Ракурс ${capturedAngles.length}/${MAX_MANUAL_ANGLES}`, 'Отправляю уточнение в AI');
+  setStatus(`Кадров ${capturedAngles.length}/${MAX_SCAN_FRAMES}`, 'Отправляю уточнение в AI');
   await submitScan(packageForAi, metrics.fingerprint, true);
 
-  if (waitingManualAngle && capturedAngles.length >= MAX_MANUAL_ANGLES) {
-    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, 'Точности всё ещё мало. Попробуйте другую деталь или крупнее покажите маркировку');
+  if (waitingManualAngle && capturedAngles.length >= MAX_SCAN_FRAMES) {
+    setStatus(`${preliminaryPartName} · ${preliminaryPartConfidence}%`, 'Точности всё ещё мало. Покажите маркировку крупнее или начните новую деталь');
     setManualScanButton(true, 'Сканировать ещё раз');
   }
 }
