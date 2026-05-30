@@ -25,7 +25,7 @@
           <div class="ready-card">
             <div class="ready-kicker">Камера готова</div>
             <div class="ready-title">Начать сканирование?</div>
-            <div class="ready-text">Автозахват включится только после нажатия. Наведите камеру на автодеталь или узел машины.</div>
+            <div class="ready-text">Первый кадр поймаем автоматически. Если точности не хватит — следующий ракурс снимете кнопкой.</div>
             <button id="startScanButton" class="start-scan-button" type="button">Начать сканирование</button>
           </div>
         </div>
@@ -46,6 +46,7 @@
         <div class="bottom-status">
           <div id="status" class="status-line">Камера запускается</div>
           <div id="guidance" class="guidance">Держите деталь внутри контура</div>
+          <button id="scanAngleButton" class="scan-angle-button" type="button" hidden>Сканировать ракурс</button>
           <div id="progressLine" class="progress-line"><span></span></div>
         </div>
       </div>
