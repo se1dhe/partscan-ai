@@ -16,7 +16,8 @@ catalogSearch.addEventListener('input', event => {
 async function loadParts() {
   const response = await fetch('/api/v1/parts');
   allParts = response.ok ? await response.json() : [];
-  const lastScan = allParts.length ? relativeTime(latestDate(allParts.map(part => part.createdAt || part.updatedAt))) : 'нет сканов';
+  const lastScanRaw = allParts.length ? latestDate(allParts.map(scanTimestamp)) : null;
+  const lastScan = lastScanRaw ? `${relativeTime(lastScanRaw)} · ${formatDate(lastScanRaw)}` : 'нет сканов';
   catalogMeta.textContent = `${allParts.length} сканов · последний: ${lastScan}`;
   renderCategoryFilters();
   renderParts();
@@ -48,7 +49,7 @@ function renderParts() {
         .toLowerCase()
         .includes(searchQuery);
     })
-    .sort((a, b) => dateValue(b.createdAt || b.updatedAt) - dateValue(a.createdAt || a.updatedAt));
+    .sort((a, b) => dateValue(scanTimestamp(b)) - dateValue(scanTimestamp(a)));
 
   partsList.innerHTML = visibleParts.length ? visibleParts.map(renderPart).join('') : '<div class="empty">Ничего не найдено</div>';
 }
@@ -61,17 +62,19 @@ function renderPart(part) {
   const title = escapeHtml(part.name || 'Неизвестная деталь');
   const meta = [part.manufacturer, part.articleNumber, part.category].filter(Boolean).join(' · ') || 'Без уточнений';
   const status = part.reviewStatus || 'pending';
-  const scanTime = relativeTime(part.createdAt || part.updatedAt);
-  const absoluteTime = formatDate(part.createdAt || part.updatedAt);
+  const scannedAt = scanTimestamp(part);
+  const scanTime = relativeTime(scannedAt);
+  const absoluteTime = formatDate(scannedAt);
   return `
     <article class="part-card" data-part-id="${escapeHtml(part.id)}">
       <div class="part-head">
         <div><div class="part-name">${title}</div><div class="meta">${escapeHtml(meta)}</div></div>
         <div class="confidence">${confidence}%</div>
       </div>
+      <div class="scan-datetime">Отсканировано: <strong>${escapeHtml(absoluteTime)}</strong></div>
       <div class="card-meta-row">
         <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
-        <span class="scan-time" title="${escapeHtml(absoluteTime)}">скан: ${escapeHtml(scanTime)}</span>
+        <span class="scan-time" title="${escapeHtml(absoluteTime)}">${escapeHtml(scanTime)}</span>
       </div>
       <div class="meta">${escapeHtml(part.description || '')}</div>
       ${part.identificationReason ? `<div class="detail-box"><strong>Почему так:</strong><div class="meta">${escapeHtml(part.identificationReason)}</div></div>` : ''}
@@ -105,6 +108,10 @@ async function sendReview(id, payload) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   });
   if (response.ok) await loadParts();
+}
+
+function scanTimestamp(part) {
+  return part?.createdAt || part?.updatedAt || part?.scannedAt || null;
 }
 
 function latestDate(values) {
