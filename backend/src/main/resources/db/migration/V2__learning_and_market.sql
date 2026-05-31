@@ -34,15 +34,13 @@ CREATE TABLE IF NOT EXISTS part_market_listings(
  part_id UUID NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
  source VARCHAR(64) NOT NULL,
  title TEXT,
- price NUMERIC(12,2),
+ price INTEGER,
  currency VARCHAR(16),
  url TEXT,
  location VARCHAR(255),
  image_url TEXT,
- published_at VARCHAR(255),
  matched_query VARCHAR(255),
- created_at TIMESTAMP WITH TIME ZONE,
- updated_at TIMESTAMP WITH TIME ZONE
+ created_at TIMESTAMP WITH TIME ZONE
 );
 
 CREATE INDEX IF NOT EXISTS idx_market_listings_part_id ON part_market_listings(part_id);
