@@ -3,6 +3,8 @@ package app.partscan.service;
 import app.partscan.entity.Part;
 import app.partscan.entity.PartMarketListing;
 import app.partscan.repository.PartMarketListingRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -33,11 +35,13 @@ public class OlxSearchService {
  private static final Pattern ARTICLE_PATTERN = Pattern.compile("[a-zA-ZА-Яа-я0-9][a-zA-ZА-Яа-я0-9 ._/-]{4,}");
 
  private final PartMarketListingRepository listingRepository;
+ private final ObjectMapper objectMapper;
  private final boolean enabled;
  private final int maxResults;
 
- public OlxSearchService(PartMarketListingRepository listingRepository, @Value("${olx.enabled:true}") boolean enabled, @Value("${olx.max-results:5}") int maxResults) {
+ public OlxSearchService(PartMarketListingRepository listingRepository, ObjectMapper objectMapper, @Value("${olx.enabled:true}") boolean enabled, @Value("${olx.max-results:5}") int maxResults) {
   this.listingRepository = listingRepository;
+  this.objectMapper = objectMapper;
   this.enabled = enabled;
   this.maxResults = Math.max(1, Math.min(maxResults, 8));
  }
@@ -95,26 +99,39 @@ public class OlxSearchService {
 
  private List<String> buildQueries(Part part) {
   Set<String> queries = new LinkedHashSet<>();
+  for (String query : parseJsonArray(part.getSearchQueries())) addIfUseful(queries, query);
   String article = cleanArticle(part.getArticleNumber());
+  String articleSpaced = article.replaceAll("([A-Za-zА-Яа-я]+)([0-9])", "$1 $2").replaceAll("([0-9])([A-Za-zА-Яа-я]+)", "$1 $2");
   String manufacturer = clean(part.getManufacturer());
-  String name = clean(part.getName());
+  String name = bestName(part);
   String normalizedName = clean(part.getNormalizedName());
+  String componentName = clean(part.getVisibleComponentName());
+  String assemblyName = clean(part.getAssemblyName());
 
   addIfUseful(queries, article);
-  addIfUseful(queries, join(manufacturer, article));
+  addIfUseful(queries, articleSpaced);
+  addIfUseful(queries, join(article, componentName));
   addIfUseful(queries, join(article, name));
-  addIfUseful(queries, join(manufacturer, name));
+  addIfUseful(queries, join(manufacturer, article));
+  addIfUseful(queries, join(manufacturer, componentName));
+  addIfUseful(queries, join(componentName, assemblyName));
   addIfUseful(queries, name);
   addIfUseful(queries, normalizedName);
-  return queries.stream().limit(5).toList();
+  return queries.stream().limit(7).toList();
  }
 
  private List<String> softQueries(Part part) {
   Set<String> queries = new LinkedHashSet<>();
   addIfUseful(queries, cleanArticle(part.getArticleNumber()));
-  addIfUseful(queries, clean(part.getName()));
-  addIfUseful(queries, join(clean(part.getManufacturer()), clean(part.getName())));
-  return queries.stream().limit(3).toList();
+  addIfUseful(queries, bestName(part));
+  addIfUseful(queries, clean(part.getVisibleComponentName()));
+  addIfUseful(queries, join(clean(part.getManufacturer()), bestName(part)));
+  return queries.stream().limit(4).toList();
+ }
+
+ private String bestName(Part part) {
+  if (StringUtils.hasText(part.getVisibleComponentName())) return part.getVisibleComponentName();
+  return clean(part.getName());
  }
 
  private int minimumScore(Part part) {
@@ -125,15 +142,21 @@ public class OlxSearchService {
  private int relevanceScore(Part part, PartMarketListing listing, String query) {
   String haystack = normalize(listing.getTitle() + " " + listing.getLocation() + " " + listing.getMatchedQuery());
   String name = normalize(part.getName());
+  String componentName = normalize(part.getVisibleComponentName());
+  String assemblyName = normalize(part.getAssemblyName());
   String category = normalize(part.getCategory());
   String manufacturer = normalize(part.getManufacturer());
   String article = normalize(cleanArticle(part.getArticleNumber()));
+  String articleSpaced = normalize(cleanArticle(part.getArticleNumber()).replaceAll("([A-Za-zА-Яа-я]+)([0-9])", "$1 $2").replaceAll("([0-9])([A-Za-zА-Яа-я]+)", "$1 $2"));
   String queryText = normalize(query);
 
   int score = 0;
   if (StringUtils.hasText(article) && article.length() >= 5 && haystack.contains(article)) score += 10;
+  if (StringUtils.hasText(articleSpaced) && articleSpaced.length() >= 5 && haystack.contains(articleSpaced)) score += 10;
   if (StringUtils.hasText(manufacturer) && !"unknown".equals(manufacturer) && haystack.contains(manufacturer)) score += 3;
+  for (String token : importantTokens(componentName)) if (haystack.contains(token)) score += 3;
   for (String token : importantTokens(name)) if (haystack.contains(token)) score += 2;
+  for (String token : importantTokens(assemblyName)) if (haystack.contains(token)) score += 1;
   for (String token : importantTokens(category)) if (haystack.contains(token)) score += 1;
   for (String token : importantTokens(queryText)) if (haystack.contains(token)) score += 1;
   if (listing.getPrice() != null && listing.getPrice() > 0) score += 1;
@@ -144,9 +167,22 @@ public class OlxSearchService {
   if (!StringUtils.hasText(value)) return List.of();
   List<String> tokens = new ArrayList<>();
   for (String token : value.split("[^a-zа-я0-9]+")) {
-   if (token.length() >= 3 && !List.of("unknown", "деталь", "корпус", "система", "часть", "запчасть").contains(token)) tokens.add(token);
+   if (token.length() >= 3 && !List.of("unknown", "деталь", "корпус", "система", "часть", "запчасть", "узел").contains(token)) tokens.add(token);
   }
   return tokens.stream().distinct().limit(7).toList();
+ }
+
+ private List<String> parseJsonArray(String value) {
+  if (!StringUtils.hasText(value)) return List.of();
+  try {
+   JsonNode node = objectMapper.readTree(value);
+   if (!node.isArray()) return List.of();
+   List<String> values = new ArrayList<>();
+   for (JsonNode item : node) if (item.isTextual() && StringUtils.hasText(item.asText())) values.add(item.asText());
+   return values;
+  } catch (Exception ignored) {
+   return List.of();
+  }
  }
 
  private void addIfUseful(Set<String> queries, String value) {
