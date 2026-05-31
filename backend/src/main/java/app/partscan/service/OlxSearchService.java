@@ -49,14 +49,36 @@ public class OlxSearchService {
   if (queries.isEmpty()) return;
 
   List<ScoredListing> scored = new ArrayList<>();
+  int rawCards = 0;
   for (String query : queries) {
    try {
-    for (PartMarketListing listing : search(query, part, maxResults * 3)) {
+    List<PartMarketListing> candidates = search(query, part, maxResults * 4);
+    rawCards += candidates.size();
+    for (PartMarketListing listing : candidates) {
      int score = relevanceScore(part, listing, query);
-     if (score >= 4 && scored.stream().noneMatch(item -> safe(item.listing().getUrl()).equals(safe(listing.getUrl())))) scored.add(new ScoredListing(listing, score));
+     if (score >= minimumScore(part) && scored.stream().noneMatch(item -> safe(item.listing().getUrl()).equals(safe(listing.getUrl())))) {
+      scored.add(new ScoredListing(listing, score));
+     }
     }
    } catch (Exception error) {
     log.warn("OLX search failed: partId={}, query={}, message={}", part.getId(), query, error.getMessage());
+   }
+  }
+
+  if (scored.isEmpty()) {
+   log.info("OLX strict match is empty, using soft fallback: partId={}, rawCards={}", part.getId(), rawCards);
+   for (String query : softQueries(part)) {
+    try {
+     List<PartMarketListing> candidates = search(query, part, maxResults);
+     rawCards += candidates.size();
+     for (PartMarketListing listing : candidates) {
+      int score = Math.max(1, relevanceScore(part, listing, query));
+      if (scored.stream().noneMatch(item -> safe(item.listing().getUrl()).equals(safe(listing.getUrl())))) scored.add(new ScoredListing(listing, score));
+     }
+    } catch (Exception error) {
+     log.warn("OLX fallback failed: partId={}, query={}, message={}", part.getId(), query, error.getMessage());
+    }
+    if (scored.size() >= maxResults) break;
    }
   }
 
@@ -68,7 +90,7 @@ public class OlxSearchService {
 
   listingRepository.deleteByPartId(part.getId());
   if (!found.isEmpty()) listingRepository.saveAll(found);
-  log.info("OLX listings refreshed: partId={}, queries={}, found={}", part.getId(), queries, found.size());
+  log.info("OLX listings refreshed: partId={}, queries={}, rawCards={}, kept={}, found={}", part.getId(), queries, rawCards, scored.size(), found.size());
  }
 
  private List<String> buildQueries(Part part) {
@@ -87,6 +109,19 @@ public class OlxSearchService {
   return queries.stream().limit(5).toList();
  }
 
+ private List<String> softQueries(Part part) {
+  Set<String> queries = new LinkedHashSet<>();
+  addIfUseful(queries, cleanArticle(part.getArticleNumber()));
+  addIfUseful(queries, clean(part.getName()));
+  addIfUseful(queries, join(clean(part.getManufacturer()), clean(part.getName())));
+  return queries.stream().limit(3).toList();
+ }
+
+ private int minimumScore(Part part) {
+  String article = cleanArticle(part.getArticleNumber());
+  return StringUtils.hasText(article) && article.length() >= 5 ? 3 : 2;
+ }
+
  private int relevanceScore(Part part, PartMarketListing listing, String query) {
   String haystack = normalize(listing.getTitle() + " " + listing.getLocation() + " " + listing.getMatchedQuery());
   String name = normalize(part.getName());
@@ -96,7 +131,7 @@ public class OlxSearchService {
   String queryText = normalize(query);
 
   int score = 0;
-  if (StringUtils.hasText(article) && article.length() >= 5 && haystack.contains(article)) score += 9;
+  if (StringUtils.hasText(article) && article.length() >= 5 && haystack.contains(article)) score += 10;
   if (StringUtils.hasText(manufacturer) && !"unknown".equals(manufacturer) && haystack.contains(manufacturer)) score += 3;
   for (String token : importantTokens(name)) if (haystack.contains(token)) score += 2;
   for (String token : importantTokens(category)) if (haystack.contains(token)) score += 1;
@@ -109,9 +144,9 @@ public class OlxSearchService {
   if (!StringUtils.hasText(value)) return List.of();
   List<String> tokens = new ArrayList<>();
   for (String token : value.split("[^a-zа-я0-9]+")) {
-   if (token.length() >= 4 && !List.of("unknown", "деталь", "корпус", "система", "часть").contains(token)) tokens.add(token);
+   if (token.length() >= 3 && !List.of("unknown", "деталь", "корпус", "система", "часть", "запчасть").contains(token)) tokens.add(token);
   }
-  return tokens.stream().distinct().limit(6).toList();
+  return tokens.stream().distinct().limit(7).toList();
  }
 
  private void addIfUseful(Set<String> queries, String value) {
@@ -136,7 +171,7 @@ public class OlxSearchService {
 
  private List<PartMarketListing> search(String query, Part part, int limit) throws IOException {
   String url = UriComponentsBuilder.fromHttpUrl("https://www.olx.ua/uk/list/")
-   .pathSegment("q-" + query.trim().replace(' ', '-'))
+   .queryParam("q", query.trim())
    .queryParam("search[filter_float_price:from]", "1")
    .build()
    .encode()
@@ -144,29 +179,34 @@ public class OlxSearchService {
 
   Document document = Jsoup.connect(url)
    .userAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
-   .timeout((int) Duration.ofSeconds(8).toMillis())
+   .referrer("https://www.olx.ua/")
+   .timeout((int) Duration.ofSeconds(10).toMillis())
    .followRedirects(true)
    .get();
 
   List<PartMarketListing> listings = new ArrayList<>();
-  for (Element card : document.select("[data-cy=l-card], div[data-testid=l-card], .css-1sw7q4x")) {
+  for (Element card : document.select("[data-cy='l-card'], div[data-testid='l-card'], div[data-testid='listing-grid'] div:has(a[href*='/d/uk/obyavlenie/']), div:has(a[href*='/d/obyavlenie/'])")) {
    if (listings.size() >= limit) break;
    PartMarketListing listing = parseCard(card, part, query);
    if (listing != null && listings.stream().noneMatch(item -> safe(item.getUrl()).equals(safe(listing.getUrl())))) listings.add(listing);
   }
+  log.info("OLX query parsed: partId={}, query={}, cards={}", part.getId(), query, listings.size());
   return listings;
  }
 
  private PartMarketListing parseCard(Element card, Part part, String query) {
-  Element link = card.selectFirst("a[href]");
+  Element link = card.selectFirst("a[href*='/d/uk/obyavlenie/'], a[href*='/d/obyavlenie/'], a[href]");
   if (link == null) return null;
-  String title = text(card.selectFirst("h6, h4, [data-cy=ad-card-title], [data-testid=ad-title]"));
+  String title = text(card.selectFirst("h6, h4, [data-cy='ad-card-title'], [data-testid='ad-title']"));
   if (!StringUtils.hasText(title)) title = text(link);
   if (!StringUtils.hasText(title)) return null;
 
   String href = link.attr("abs:href");
   if (!StringUtils.hasText(href)) href = "https://www.olx.ua" + link.attr("href");
-  String priceText = text(card.selectFirst("[data-testid=ad-price], p[data-testid=ad-price], .css-uj7mm0"));
+  if (!href.contains("olx.ua") || !href.contains("/d/")) return null;
+
+  String priceText = text(card.selectFirst("[data-testid='ad-price'], p[data-testid='ad-price']"));
+  if (!StringUtils.hasText(priceText)) priceText = firstPriceLikeText(card);
 
   PartMarketListing listing = new PartMarketListing();
   listing.setPart(part);
@@ -174,12 +214,20 @@ public class OlxSearchService {
   listing.setTitle(title);
   listing.setPrice(parsePrice(priceText));
   listing.setCurrency(parseCurrency(priceText));
-  listing.setUrl(href);
-  listing.setLocation(text(card.selectFirst("[data-testid=location-date], .css-veheph")));
+  listing.setUrl(href.split("#")[0]);
+  listing.setLocation(text(card.selectFirst("[data-testid='location-date']")));
   Element image = card.selectFirst("img[src]");
   listing.setImageUrl(image == null ? null : image.attr("abs:src"));
   listing.setMatchedQuery(query);
   return listing;
+ }
+
+ private String firstPriceLikeText(Element card) {
+  for (Element element : card.select("p, span")) {
+   String value = element.text();
+   if (StringUtils.hasText(value) && PRICE_PATTERN.matcher(value.replace('\u00A0', ' ')).find()) return value;
+  }
+  return "";
  }
 
  private Integer parsePrice(String value) {
