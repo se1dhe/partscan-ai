@@ -3,6 +3,8 @@ package app.partscan.service;
 import app.partscan.dto.PartAnalysisDto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +26,6 @@ import java.util.Map;
 public class GeminiVisionService {
  private static final Logger log = LoggerFactory.getLogger(GeminiVisionService.class);
  private static final int MAX_ATTEMPTS = 2;
-
  private final RestClient restClient;
  private final ObjectMapper objectMapper;
  private final String apiKey;
@@ -46,10 +47,11 @@ public class GeminiVisionService {
   try { body = requestBody(files); } catch (IOException e) { throw new IllegalStateException("Could not read uploaded image for Gemini", e); }
   String response = executeWithRetry(body);
   try {
-   String json = extractText(response);
-   PartAnalysisDto analysis = objectMapper.readValue(json, PartAnalysisDto.class);
+   String json = extractJson(response);
+   PartAnalysisDto analysis = parseAnalysis(json);
    return new VisionAnalysisResult(analysis, response, "gemini");
-  } catch (IOException e) {
+  } catch (Exception e) {
+   log.warn("Gemini parse failed: reason={}, raw={}", e.getMessage(), compact(response));
    throw new IllegalStateException("Could not analyze uploaded image with Gemini", e);
   }
  }
@@ -65,12 +67,7 @@ public class GeminiVisionService {
   }
   return Map.of(
    "contents", List.of(Map.of("role", "user", "parts", parts)),
-   "generationConfig", Map.of(
-    "responseMimeType", "application/json",
-    "responseSchema", schema(),
-    "temperature", 0,
-    "maxOutputTokens", 650
-   )
+   "generationConfig", Map.of("responseMimeType", "application/json", "temperature", 0, "maxOutputTokens", 850)
   );
  }
 
@@ -102,30 +99,101 @@ public class GeminiVisionService {
 
  private String contentType(MultipartFile file) { return StringUtils.hasText(file.getContentType()) ? file.getContentType() : MediaType.IMAGE_JPEG_VALUE; }
 
- private String extractText(String response) throws IOException {
+ private PartAnalysisDto parseAnalysis(String json) throws IOException {
+  JsonNode parsed = objectMapper.readTree(json);
+  ObjectNode normalized = objectMapper.createObjectNode();
+  normalized.put("automotivePart", parsed.path("automotivePart").asBoolean(parsed.path("isAutomotivePart").asBoolean(true)));
+  normalized.put("name", text(parsed, "name", "Неизвестная деталь"));
+  normalized.put("normalizedName", text(parsed, "normalizedName", text(parsed, "name", "unknown")));
+  normalized.put("manufacturer", text(parsed, "manufacturer", "unknown"));
+  normalized.put("articleNumber", text(parsed, "articleNumber", ""));
+  normalized.put("category", text(parsed, "category", "unknown"));
+  normalized.put("confidence", number(parsed, "confidence", 0.0));
+  normalized.put("description", text(parsed, "description", ""));
+  normalized.put("condition", text(parsed, "condition", "unknown"));
+  normalized.put("needsBetterPhoto", parsed.path("needsBetterPhoto").asBoolean(false));
+  normalized.put("identificationReason", text(parsed, "identificationReason", text(parsed, "reason", "")));
+  normalized.set("visibleMarkings", stringArray(parsed.get("visibleMarkings")));
+  normalized.set("compatibleVehicles", stringArray(parsed.get("compatibleVehicles")));
+  normalized.set("sourceHints", stringArray(parsed.get("sourceHints")));
+  normalized.set("photoTips", stringArray(parsed.get("photoTips")));
+  normalized.set("alternatives", alternativesArray(parsed.get("alternatives")));
+  return objectMapper.treeToValue(normalized, PartAnalysisDto.class);
+ }
+
+ private String extractJson(String response) throws IOException {
   JsonNode root = objectMapper.readTree(response);
   JsonNode text = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-  if (text.isTextual() && text.asText().trim().startsWith("{")) return text.asText();
-  for (JsonNode textNode : root.findValues("text")) if (textNode.isTextual() && textNode.asText().trim().startsWith("{")) return textNode.asText();
-  throw new IllegalStateException("Gemini response did not contain JSON analysis");
+  if (text.isTextual()) return cleanupJson(text.asText());
+  for (JsonNode textNode : root.findValues("text")) if (textNode.isTextual()) return cleanupJson(textNode.asText());
+  throw new IllegalStateException("Gemini response did not contain text JSON analysis");
+ }
+
+ private String cleanupJson(String value) {
+  String text = value == null ? "" : value.trim();
+  if (text.startsWith("```")) text = text.replaceFirst("^```(?:json)?", "").replaceFirst("```$", "").trim();
+  int start = text.indexOf('{');
+  int end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return text.substring(start, end + 1);
+  throw new IllegalStateException("Gemini response text is not JSON");
+ }
+
+ private String text(JsonNode node, String field, String fallback) {
+  JsonNode value = node == null ? null : node.get(field);
+  if (value == null || value.isNull()) return fallback;
+  return value.isTextual() ? value.asText(fallback) : value.toString();
+ }
+
+ private double number(JsonNode node, String field, double fallback) {
+  JsonNode value = node == null ? null : node.get(field);
+  if (value == null || value.isNull()) return fallback;
+  if (value.isNumber()) return value.asDouble(fallback);
+  if (value.isTextual()) {
+   String raw = value.asText().trim();
+   try { return Double.parseDouble(raw.replace("%", "")) / (raw.contains("%") ? 100.0 : 1.0); } catch (NumberFormatException ignored) { return fallback; }
+  }
+  return fallback;
+ }
+
+ private ArrayNode stringArray(JsonNode value) {
+  ArrayNode array = objectMapper.createArrayNode();
+  if (value == null || value.isNull()) return array;
+  if (value.isArray()) {
+   for (JsonNode item : value) if (!item.isNull()) array.add(item.isTextual() ? item.asText() : item.toString());
+   return array;
+  }
+  if (value.isTextual() && StringUtils.hasText(value.asText())) array.add(value.asText());
+  return array;
+ }
+
+ private ArrayNode alternativesArray(JsonNode value) {
+  ArrayNode array = objectMapper.createArrayNode();
+  if (value == null || !value.isArray()) return array;
+  for (JsonNode item : value) {
+   ObjectNode alternative = objectMapper.createObjectNode();
+   alternative.put("name", text(item, "name", "Альтернатива"));
+   alternative.put("confidence", number(item, "confidence", 0.0));
+   alternative.put("reason", text(item, "reason", ""));
+   array.add(alternative);
+  }
+  return array;
+ }
+
+ private String compact(String response) {
+  String value = response == null ? "" : response.replaceAll("\\s+", " ").trim();
+  return value.length() > 1200 ? value.substring(0, 1200) + "..." : value;
  }
 
  private String prompt(int imageCount) {
   return """
-   Identify an automotive spare part or installed vehicle component from %d image(s). Return ONLY compact JSON matching schema.
-   Russian fields. Preserve visible brands/numbers exactly.
-   If not an automotive part: automotivePart=false, name=\"Не автодеталь\", normalizedName=\"not_part\", category=\"not_part\", confidence=0, needsBetterPhoto=true.
-   Do not invent part numbers, brands, vehicle fitment, or condition. Use unknown/empty arrays when not visible.
-   confidence>=0.9 only when visual evidence is strong. needsBetterPhoto=true if a closer marking, connector, port, mounting point, side angle, or better light is needed.
-   Never ask to flip/remove/disassemble the part; suggest only moving the camera.
-   Keep description, identificationReason, photoTips, sourceHints, and alternatives very short.
+   Identify an automotive spare part or installed vehicle component from %d image(s).
+   Return only valid compact JSON with fields: automotivePart, name, normalizedName, manufacturer, articleNumber, category, confidence, description, condition, needsBetterPhoto, identificationReason, visibleMarkings, compatibleVehicles, sourceHints, photoTips, alternatives.
+   Russian text. Preserve visible brands and numbers exactly.
+   If not an automotive part: automotivePart=false, name="Не автодеталь", normalizedName="not_part", category="not_part", confidence=0, needsBetterPhoto=true.
+   Do not invent part numbers, brands, vehicle fitment, or condition. Use unknown or empty arrays when not visible.
+   confidence must be a number from 0 to 1. Use 0.9 or higher only when visual evidence is strong.
+   If more info is needed, suggest moving the camera closer or to the side.
+   Keep all text fields very short.
    """.formatted(imageCount);
- }
-
- private Map<String, Object> schema() {
-  Map<String, Object> stringArray = Map.of("type", "ARRAY", "items", Map.of("type", "STRING"));
-  Map<String, Object> alternative = Map.of("type", "OBJECT", "required", List.of("name", "confidence", "reason"), "properties", Map.of("name", Map.of("type", "STRING"), "confidence", Map.of("type", "NUMBER"), "reason", Map.of("type", "STRING")));
-  return Map.of("type", "OBJECT", "required", List.of("automotivePart", "name", "normalizedName", "manufacturer", "articleNumber", "category", "confidence", "description", "condition", "needsBetterPhoto", "identificationReason", "visibleMarkings", "compatibleVehicles", "sourceHints", "photoTips", "alternatives"), "properties", Map.ofEntries(
-   Map.entry("automotivePart", Map.of("type", "BOOLEAN")), Map.entry("name", Map.of("type", "STRING")), Map.entry("normalizedName", Map.of("type", "STRING")), Map.entry("manufacturer", Map.of("type", "STRING")), Map.entry("articleNumber", Map.of("type", "STRING")), Map.entry("category", Map.of("type", "STRING")), Map.entry("confidence", Map.of("type", "NUMBER")), Map.entry("description", Map.of("type", "STRING")), Map.entry("condition", Map.of("type", "STRING")), Map.entry("needsBetterPhoto", Map.of("type", "BOOLEAN")), Map.entry("identificationReason", Map.of("type", "STRING")), Map.entry("visibleMarkings", stringArray), Map.entry("compatibleVehicles", stringArray), Map.entry("sourceHints", stringArray), Map.entry("photoTips", stringArray), Map.entry("alternatives", Map.of("type", "ARRAY", "items", alternative))));
  }
 }
