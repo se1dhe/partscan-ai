@@ -25,6 +25,7 @@ function renderPart(part) {
   const vehicles = parseList(part.compatibleVehicles);
   const tips = parseList(part.photoTips);
   const alternatives = parseList(part.alternatives);
+  const searchQueries = parseList(part.searchQueries);
   detailTitle.textContent = part.name || 'Деталь';
   detailMeta.textContent = `${confidence}% · ${formatDate(scanTimestamp(part))}`;
   partDetail.innerHTML = `
@@ -35,14 +36,32 @@ function renderPart(part) {
         <div class="confidence">${confidence}%</div>
       </div>
       <div class="scan-datetime">Отсканировано: <strong>${escapeHtml(formatDate(scanTimestamp(part)))}</strong></div>
+      ${renderScope(part)}
       ${part.description ? `<p class="detail-description">${escapeHtml(part.description)}</p>` : ''}
       ${part.identificationReason ? box('Почему так', part.identificationReason) : ''}
       ${markings.length ? tagsBox('Маркировка', markings) : ''}
+      ${searchQueries.length ? tagsBox('Запросы для OLX', searchQueries) : ''}
       ${vehicles.length ? tagsBox('Совместимость', vehicles) : ''}
       ${tips.length ? listBox('Для точности', tips) : ''}
       ${alternatives.length ? listBox('Альтернативы', alternatives.map(item => `${item.name || 'Альтернатива'} ${item.confidence ? `· ${Math.round(item.confidence * 100)}%` : ''} ${item.reason ? `— ${item.reason}` : ''}`)) : ''}
       ${renderMarket(part)}
     </article>
+  `;
+}
+
+function renderScope(part) {
+  const scope = part.partScope || 'unknown';
+  const component = part.visibleComponentName || '';
+  const assembly = part.assemblyName || '';
+  const note = part.uncertaintyNote || '';
+  if (scope === 'unknown' && !component && !assembly && !note) return '';
+  return `
+    <section class="detail-box scope-box">
+      <strong>${escapeHtml(scopeLabel(scope))}</strong>
+      ${component ? `<div class="meta">Видимый компонент: <b>${escapeHtml(component)}</b></div>` : ''}
+      ${assembly ? `<div class="meta">Узел/система: <b>${escapeHtml(assembly)}</b></div>` : ''}
+      ${note ? `<div class="meta scope-note">${escapeHtml(note)}</div>` : ''}
+    </section>
   `;
 }
 
@@ -62,6 +81,17 @@ function renderMarket(part) {
         `).join('')}
       </div>
     </section>`;
+}
+
+function scopeLabel(scope) {
+  return {
+    whole_part: 'Целая деталь',
+    assembly: 'Узел в сборе',
+    subcomponent: 'Часть узла',
+    fragment: 'Фрагмент детали',
+    installed_component: 'Деталь установлена на авто',
+    unknown: 'Тип детали не уточнён'
+  }[scope] || 'Тип детали не уточнён';
 }
 
 function box(title, text) { return `<section class="detail-box"><strong>${escapeHtml(title)}</strong><div class="meta">${escapeHtml(text)}</div></section>`; }
