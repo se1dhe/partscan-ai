@@ -2,15 +2,18 @@ package app.partscan.controller;
 
 import app.partscan.service.GeminiVisionException;
 import app.partscan.service.OpenAiVisionException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.io.IOException;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -53,9 +56,40 @@ public class ApiExceptionHandler {
   return ResponseEntity.status(exception.getStatus()).body(Map.of("error", exception.getMessage()));
  }
 
+ @ExceptionHandler({AsyncRequestNotUsableException.class, ClientAbortException.class})
+ public ResponseEntity<Void> clientDisconnected(Exception exception) {
+  log.debug("Client disconnected before response was written: message={}", exception.getMessage());
+  return ResponseEntity.status(499).build();
+ }
+
  @ExceptionHandler(Exception.class)
- public ResponseEntity<Map<String, String>> unexpectedError(Exception exception) {
+ public ResponseEntity<?> unexpectedError(Exception exception) {
+  if (isClientAbort(exception)) {
+   log.debug("Client disconnected before response was written: message={}", rootMessage(exception));
+   return ResponseEntity.status(499).build();
+  }
+
   log.error("Unexpected backend error", exception);
   return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Внутренняя ошибка сервера. Подробности записаны в логи."));
+ }
+
+ private boolean isClientAbort(Throwable throwable) {
+  Throwable current = throwable;
+  while (current != null) {
+   if (current instanceof ClientAbortException || current instanceof AsyncRequestNotUsableException) return true;
+   if (current instanceof IOException && current.getMessage() != null && current.getMessage().toLowerCase().contains("broken pipe")) return true;
+   current = current.getCause();
+  }
+  return false;
+ }
+
+ private String rootMessage(Throwable throwable) {
+  Throwable current = throwable;
+  Throwable last = throwable;
+  while (current != null) {
+   last = current;
+   current = current.getCause();
+  }
+  return last == null ? "unknown" : last.getMessage();
  }
 }
