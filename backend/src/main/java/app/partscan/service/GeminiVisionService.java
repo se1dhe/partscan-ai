@@ -123,7 +123,12 @@ public class GeminiVisionService {
   normalized.put("description", text(parsed, "description", ""));
   normalized.put("condition", text(parsed, "condition", "unknown"));
   normalized.put("needsBetterPhoto", parsed.path("needsBetterPhoto").asBoolean(false));
+  normalized.put("partScope", normalizeScope(text(parsed, "partScope", text(parsed, "scope", "unknown"))));
+  normalized.put("visibleComponentName", text(parsed, "visibleComponentName", text(parsed, "componentName", "")));
+  normalized.put("assemblyName", text(parsed, "assemblyName", text(parsed, "systemName", "")));
+  normalized.put("uncertaintyNote", text(parsed, "uncertaintyNote", ""));
   normalized.put("identificationReason", text(parsed, "identificationReason", text(parsed, "reason", "")));
+  normalized.set("searchQueries", stringArray(parsed.get("searchQueries")));
   normalized.set("visibleMarkings", stringArray(parsed.get("visibleMarkings")));
   normalized.set("compatibleVehicles", stringArray(parsed.get("compatibleVehicles")));
   normalized.set("sourceHints", stringArray(parsed.get("sourceHints")));
@@ -190,6 +195,15 @@ public class GeminiVisionService {
   return array;
  }
 
+ private String normalizeScope(String value) {
+  if (!StringUtils.hasText(value)) return "unknown";
+  String normalized = value.trim().toLowerCase();
+  return switch (normalized) {
+   case "whole_part", "assembly", "subcomponent", "fragment", "installed_component", "unknown" -> normalized;
+   default -> "unknown";
+  };
+ }
+
  private String compact(String response) {
   String value = response == null ? "" : response.replaceAll("\\s+", " ").trim();
   return value.length() > 1200 ? value.substring(0, 1200) + "..." : value;
@@ -198,12 +212,19 @@ public class GeminiVisionService {
  private String prompt(int imageCount) {
   return """
    Identify an automotive spare part or installed vehicle component from %d image(s).
-   Return only valid compact JSON with fields: automotivePart, name, normalizedName, manufacturer, articleNumber, category, confidence, description, condition, needsBetterPhoto, identificationReason, visibleMarkings, compatibleVehicles, sourceHints, photoTips, alternatives.
+   Return only valid compact JSON with fields: automotivePart, name, normalizedName, manufacturer, articleNumber, category, confidence, description, condition, needsBetterPhoto, partScope, visibleComponentName, assemblyName, uncertaintyNote, searchQueries, identificationReason, visibleMarkings, compatibleVehicles, sourceHints, photoTips, alternatives.
    Russian text. Preserve visible brands and numbers exactly.
-   If not an automotive part: automotivePart=false, name="Не автодеталь", normalizedName="not_part", category="not_part", confidence=0, needsBetterPhoto=true.
+   partScope must be one of: whole_part, assembly, subcomponent, fragment, installed_component, unknown.
+   First decide whether the image shows a whole sellable part, a larger assembly, a subcomponent, a fragment, or a component still installed in a vehicle.
+   If only a part of a larger EGR/intake/brake/engine assembly is visible, do not call it the whole assembly. Put the visible item into visibleComponentName and the larger unit into assemblyName.
+   For VAG diesel EGR/intake parts with a round butterfly flap, prefer names like "Дроссельная заслонка / заслонка EGR" instead of only "Клапан EGR" unless the full EGR valve is clearly visible.
+   name must be the best short sellable name for a database card, not only the broad vehicle system.
+   searchQueries must contain 4-7 short OLX search queries. Put exact part number without spaces first, then part number with spaces, then number + visible component name, then alternative names.
+   If not an automotive part: automotivePart=false, name="Не автодеталь", normalizedName="not_part", category="not_part", confidence=0, needsBetterPhoto=true, partScope="unknown".
    Do not invent part numbers, brands, vehicle fitment, or condition. Use unknown or empty arrays when not visible.
-   confidence must be a number from 0 to 1. Use 0.9 or higher only when visual evidence is strong.
-   If more info is needed, suggest moving the camera closer or to the side.
+   confidence must be a number from 0 to 1. Use 0.9 or higher only when visual evidence and marking are strong.
+   If the visible item may be only a component of a larger unit, add a short uncertaintyNote.
+   If more info is needed, suggest moving the camera closer or to the side, not flipping heavy installed parts.
    Keep all text fields very short.
    """.formatted(imageCount);
  }
