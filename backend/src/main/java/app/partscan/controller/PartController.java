@@ -1,9 +1,12 @@
 package app.partscan.controller;
 
+import app.partscan.dto.PartDto;
 import app.partscan.dto.PartFeedbackRequest;
+import app.partscan.dto.PartMarketListingDto;
 import app.partscan.entity.Part;
 import app.partscan.entity.PartFeedback;
 import app.partscan.repository.PartFeedbackRepository;
+import app.partscan.repository.PartMarketListingRepository;
 import app.partscan.repository.PartRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
@@ -24,15 +27,17 @@ import java.util.UUID;
 public class PartController {
  private final PartRepository partRepository;
  private final PartFeedbackRepository feedbackRepository;
+ private final PartMarketListingRepository listingRepository;
 
- public PartController(PartRepository partRepository, PartFeedbackRepository feedbackRepository) {
+ public PartController(PartRepository partRepository, PartFeedbackRepository feedbackRepository, PartMarketListingRepository listingRepository) {
   this.partRepository = partRepository;
   this.feedbackRepository = feedbackRepository;
+  this.listingRepository = listingRepository;
  }
 
  @GetMapping
- public List<Part> list() {
-  return partRepository.findTop50ByOrderByCreatedAtDesc();
+ public List<PartDto> list() {
+  return partRepository.findTop50ByOrderByCreatedAtDesc().stream().map(part -> PartDto.from(part, listingRepository.findByPartIdOrderByPriceAsc(part.getId()).stream().map(PartMarketListingDto::from).toList())).toList();
  }
 
  @PostMapping("/{id}/review")
