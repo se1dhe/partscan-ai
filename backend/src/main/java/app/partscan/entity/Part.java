@@ -35,6 +35,16 @@ public class Part {
  private String condition;
  private Boolean needsBetterPhoto;
 
+ private String partScope;
+ private String visibleComponentName;
+ private String assemblyName;
+
+ @Column(columnDefinition = "TEXT")
+ private String uncertaintyNote;
+
+ @Column(columnDefinition = "TEXT")
+ private String searchQueries;
+
  @Column(columnDefinition = "TEXT")
  private String identificationReason;
 
@@ -66,6 +76,7 @@ public class Part {
   if (createdAt == null) createdAt = now;
   if (updatedAt == null) updatedAt = now;
   if (reviewStatus == null || reviewStatus.isBlank()) reviewStatus = "pending";
+  if (partScope == null || partScope.isBlank()) partScope = "unknown";
  }
 
  @PreUpdate
@@ -95,6 +106,16 @@ public class Part {
  public void setCondition(String condition) { this.condition = condition; }
  public Boolean getNeedsBetterPhoto() { return needsBetterPhoto; }
  public void setNeedsBetterPhoto(Boolean needsBetterPhoto) { this.needsBetterPhoto = needsBetterPhoto; }
+ public String getPartScope() { return partScope; }
+ public void setPartScope(String partScope) { this.partScope = partScope; }
+ public String getVisibleComponentName() { return visibleComponentName; }
+ public void setVisibleComponentName(String visibleComponentName) { this.visibleComponentName = visibleComponentName; }
+ public String getAssemblyName() { return assemblyName; }
+ public void setAssemblyName(String assemblyName) { this.assemblyName = assemblyName; }
+ public String getUncertaintyNote() { return uncertaintyNote; }
+ public void setUncertaintyNote(String uncertaintyNote) { this.uncertaintyNote = uncertaintyNote; }
+ public String getSearchQueries() { return searchQueries; }
+ public void setSearchQueries(String searchQueries) { this.searchQueries = searchQueries; }
  public String getIdentificationReason() { return identificationReason; }
  public void setIdentificationReason(String identificationReason) { this.identificationReason = identificationReason; }
  public String getVisibleMarkings() { return visibleMarkings; }
