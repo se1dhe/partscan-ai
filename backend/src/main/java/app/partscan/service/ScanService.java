@@ -45,7 +45,7 @@ public class ScanService {
   PartAnalysisDto analysis = result.analysis();
   double confidence = clampConfidence(analysis.confidence());
   boolean confidentEnough = confidence >= FINAL_CONFIDENCE_THRESHOLD && !Boolean.TRUE.equals(analysis.needsBetterPhoto());
-  log.info("Scan analysis completed: provider={}, images={}, automotivePart={}, confidence={}, confidentEnough={}", result.provider(), files.size(), analysis.automotivePart(), confidence, confidentEnough);
+  log.info("Scan analysis completed: provider={}, images={}, automotivePart={}, confidence={}, confidentEnough={}, scope={}", result.provider(), files.size(), analysis.automotivePart(), confidence, confidentEnough, analysis.partScope());
 
   if (!Boolean.TRUE.equals(analysis.automotivePart())) {
    log.info("Scan rejected as non automotive part: name={}, reason={}", analysis.name(), analysis.identificationReason());
@@ -61,7 +61,7 @@ public class ScanService {
   }
 
   Part savedPart = partRepository.save(part);
-  log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus());
+  log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}, scope={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus(), savedPart.getPartScope());
   events.publishEvent(new SavedPartEvent(savedPart.getId()));
   return ScanResponse.saved(savedPart);
  }
@@ -92,17 +92,17 @@ public class ScanService {
 
  private VisionAnalysisResult analyzeWithGeminiFallback(List<MultipartFile> files, Exception openAiError) {
   if (!geminiVisionService.isConfigured()) {
-   log.error("Gemini fallback is not configured. Original OpenAI error: {}", openAiError.getMessage());
+   log.error("Gemini fallback is not configured. Original error: {}", openAiError.getMessage());
    throw openAiError instanceof RuntimeException runtimeException ? runtimeException : new IllegalStateException(openAiError);
   }
   try {
    log.info("Trying AI analysis with Gemini fallback");
    return geminiVisionService.analyze(files);
   } catch (GeminiVisionException geminiError) {
-   log.warn("Gemini fallback failed: status={}, message={}. Original OpenAI error: {}", geminiError.getStatus(), geminiError.getMessage(), openAiError.getMessage());
+   log.warn("Gemini fallback failed: status={}, message={}. Original error: {}", geminiError.getStatus(), geminiError.getMessage(), openAiError.getMessage());
    throw geminiError;
   } catch (RuntimeException geminiError) {
-   log.error("Gemini fallback failed with unexpected error. Original OpenAI error: {}", openAiError.getMessage(), geminiError);
+   log.error("Gemini fallback failed with unexpected error. Original error: {}", openAiError.getMessage(), geminiError);
    throw geminiError;
   }
  }
@@ -120,6 +120,11 @@ public class ScanService {
   part.setDescription(defaultText(analysis.description(), ""));
   part.setCondition(defaultText(analysis.condition(), "unknown"));
   part.setNeedsBetterPhoto(Boolean.TRUE.equals(analysis.needsBetterPhoto()));
+  part.setPartScope(defaultText(analysis.partScope(), "unknown"));
+  part.setVisibleComponentName(defaultText(analysis.visibleComponentName(), ""));
+  part.setAssemblyName(defaultText(analysis.assemblyName(), ""));
+  part.setUncertaintyNote(defaultText(analysis.uncertaintyNote(), ""));
+  part.setSearchQueries(toJson(analysis.searchQueries()));
   part.setIdentificationReason(defaultText(analysis.identificationReason(), ""));
   part.setVisibleMarkings(toJson(analysis.visibleMarkings()));
   part.setCompatibleVehicles(toJson(analysis.compatibleVehicles()));
