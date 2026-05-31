@@ -37,14 +37,18 @@ public class PartController {
 
  @GetMapping
  public List<PartDto> list() {
-  return partRepository.findTop50ByOrderByCreatedAtDesc().stream().map(part -> PartDto.from(part, listingRepository.findByPartIdOrderByPriceAsc(part.getId()).stream().map(PartMarketListingDto::from).toList())).toList();
+  return partRepository.findTop50ByOrderByCreatedAtDesc().stream().map(this::toDto).toList();
+ }
+
+ @GetMapping("/{id}")
+ public PartDto detail(@PathVariable UUID id) {
+  return partRepository.findById(id).map(this::toDto).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Part not found"));
  }
 
  @PostMapping("/{id}/review")
  @ResponseStatus(HttpStatus.NO_CONTENT)
  public void review(@PathVariable UUID id, @RequestBody PartFeedbackRequest request) {
-  Part part = partRepository.findById(id)
-   .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Part not found"));
+  Part part = partRepository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Part not found"));
 
   PartFeedback entry = new PartFeedback();
   entry.setPart(part);
@@ -65,7 +69,10 @@ public class PartController {
    if (StringUtils.hasText(request.correctedArticleNumber())) part.setArticleNumber(request.correctedArticleNumber());
    if (StringUtils.hasText(request.correctedCategory())) part.setCategory(request.correctedCategory());
   }
-
   partRepository.save(part);
+ }
+
+ private PartDto toDto(Part part) {
+  return PartDto.from(part, listingRepository.findByPartIdOrderByPriceAsc(part.getId()).stream().map(PartMarketListingDto::from).toList());
  }
 }
