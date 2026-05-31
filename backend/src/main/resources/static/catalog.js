@@ -12,6 +12,7 @@ catalogSearch.addEventListener('input', event => {
   searchQuery = event.target.value.trim().toLowerCase();
   renderParts();
 });
+setInterval(loadParts, 15000);
 
 async function loadParts() {
   const response = await fetch('/api/v1/parts');
@@ -76,6 +77,7 @@ function renderPart(part) {
         <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
         <span class="scan-time" title="${escapeHtml(absoluteTime)}">${escapeHtml(scanTime)}</span>
       </div>
+      ${renderMarket(part)}
       <div class="meta">${escapeHtml(part.description || '')}</div>
       ${part.identificationReason ? `<div class="detail-box"><strong>Почему так:</strong><div class="meta">${escapeHtml(part.identificationReason)}</div></div>` : ''}
       ${markings.length ? `<div class="detail-box"><strong>Маркировка:</strong><div class="tags">${markings.map(item => `<span class="tag">${escapeHtml(item)}</span>`).join('')}</div></div>` : ''}
@@ -87,6 +89,20 @@ function renderPart(part) {
       </div>
     </article>
   `;
+}
+
+function renderMarket(part) {
+  const listings = Array.isArray(part.marketListings) ? part.marketListings.filter(item => item && item.url) : [];
+  if (!listings.length) return `<div class="market-box pending"><strong>OLX:</strong><span>цены ищутся или пока не найдены</span></div>`;
+  const prices = listings.map(item => Number(item.price)).filter(Number.isFinite).filter(value => value > 0);
+  const summary = prices.length ? `${formatMoney(Math.min(...prices))}–${formatMoney(Math.max(...prices))} грн · средняя ${formatMoney(Math.round(prices.reduce((a, b) => a + b, 0) / prices.length))} грн` : `${listings.length} похожих объявлений`;
+  return `
+    <div class="market-box">
+      <div class="market-head"><strong>OLX</strong><span>${escapeHtml(summary)}</span></div>
+      <div class="market-links">
+        ${listings.slice(0, 4).map(item => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><span>${escapeHtml(compact(item.title || 'Объявление', 46))}</span><b>${item.price ? `${formatMoney(item.price)} ${escapeHtml(item.currency || 'UAH')}` : 'цена ?'}</b></a>`).join('')}
+      </div>
+    </div>`;
 }
 
 function statusLabelText(status) {
@@ -142,6 +158,15 @@ function formatDate(value) {
   const time = dateValue(value);
   if (!time) return 'неизвестно';
   return new Date(time).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('ru-RU');
+}
+
+function compact(value, limit) {
+  const text = String(value || '').trim();
+  return text.length > limit ? `${text.slice(0, limit - 1).trim()}…` : text;
 }
 
 function parseList(value) {
