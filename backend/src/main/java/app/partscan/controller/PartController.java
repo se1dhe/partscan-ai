@@ -8,6 +8,7 @@ import app.partscan.entity.PartFeedback;
 import app.partscan.repository.PartFeedbackRepository;
 import app.partscan.repository.PartMarketListingRepository;
 import app.partscan.repository.PartRepository;
+import app.partscan.service.OlxSearchService;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,11 +29,13 @@ public class PartController {
  private final PartRepository partRepository;
  private final PartFeedbackRepository feedbackRepository;
  private final PartMarketListingRepository listingRepository;
+ private final OlxSearchService olxSearchService;
 
- public PartController(PartRepository partRepository, PartFeedbackRepository feedbackRepository, PartMarketListingRepository listingRepository) {
+ public PartController(PartRepository partRepository, PartFeedbackRepository feedbackRepository, PartMarketListingRepository listingRepository, OlxSearchService olxSearchService) {
   this.partRepository = partRepository;
   this.feedbackRepository = feedbackRepository;
   this.listingRepository = listingRepository;
+  this.olxSearchService = olxSearchService;
  }
 
  @GetMapping
@@ -43,6 +46,13 @@ public class PartController {
  @GetMapping("/{id}")
  public PartDto detail(@PathVariable UUID id) {
   return partRepository.findById(id).map(this::toDto).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Part not found"));
+ }
+
+ @PostMapping("/{id}/market/refresh")
+ public PartDto refreshMarket(@PathVariable UUID id) {
+  Part part = partRepository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Part not found"));
+  olxSearchService.refreshListings(part);
+  return toDto(part);
  }
 
  @PostMapping("/{id}/review")
