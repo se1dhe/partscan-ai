@@ -12,7 +12,7 @@ catalogSearch.addEventListener('input', event => {
   searchQuery = event.target.value.trim().toLowerCase();
   renderParts();
 });
-setInterval(loadParts, 15000);
+setInterval(loadParts, 20000);
 
 async function loadParts() {
   const response = await fetch('/api/v1/parts');
@@ -42,103 +42,55 @@ function selectCategory(category) {
 function renderParts() {
   const visibleParts = allParts
     .filter(part => selectedCategory === 'all' || (part.category || 'unknown') === selectedCategory)
-    .filter(part => {
-      if (!searchQuery) return true;
-      return [part.name, part.normalizedName, part.manufacturer, part.articleNumber, part.category, part.description]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(searchQuery);
-    })
+    .filter(part => !searchQuery || [part.name, part.normalizedName, part.manufacturer, part.articleNumber, part.category, part.description].filter(Boolean).join(' ').toLowerCase().includes(searchQuery))
     .sort((a, b) => dateValue(scanTimestamp(b)) - dateValue(scanTimestamp(a)));
 
   partsList.innerHTML = visibleParts.length ? visibleParts.map(renderPart).join('') : '<div class="empty">Ничего не найдено</div>';
 }
 
 function renderPart(part) {
-  const vehicles = parseList(part.compatibleVehicles).slice(0, 5);
-  const markings = parseList(part.visibleMarkings).slice(0, 5);
-  const tips = parseList(part.photoTips).slice(0, 3);
   const confidence = Math.round((part.confidence || 0) * 100);
   const title = escapeHtml(part.name || 'Неизвестная деталь');
   const meta = [part.manufacturer, part.articleNumber, part.category].filter(Boolean).join(' · ') || 'Без уточнений';
   const status = part.reviewStatus || 'pending';
   const scannedAt = scanTimestamp(part);
-  const scanTime = relativeTime(scannedAt);
-  const absoluteTime = formatDate(scannedAt);
+  const listings = Array.isArray(part.marketListings) ? part.marketListings.filter(item => item && item.url) : [];
+  const marketText = marketSummary(listings);
   return `
-    <article class="part-card" data-part-id="${escapeHtml(part.id)}">
-      <div class="part-head">
-        <div><div class="part-name">${title}</div><div class="meta">${escapeHtml(meta)}</div></div>
-        <div class="confidence">${confidence}%</div>
-      </div>
-      <div class="scan-datetime">Отсканировано: <strong>${escapeHtml(absoluteTime)}</strong></div>
-      <div class="card-meta-row">
-        <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
-        <span class="scan-time" title="${escapeHtml(absoluteTime)}">${escapeHtml(scanTime)}</span>
-      </div>
-      ${renderMarket(part)}
-      <div class="meta">${escapeHtml(part.description || '')}</div>
-      ${part.identificationReason ? `<div class="detail-box"><strong>Почему так:</strong><div class="meta">${escapeHtml(part.identificationReason)}</div></div>` : ''}
-      ${markings.length ? `<div class="detail-box"><strong>Маркировка:</strong><div class="tags">${markings.map(item => `<span class="tag">${escapeHtml(item)}</span>`).join('')}</div></div>` : ''}
-      ${vehicles.length ? `<div class="detail-box"><strong>Совместимость:</strong><div class="tags">${vehicles.map(item => `<span class="tag">${escapeHtml(item)}</span>`).join('')}</div></div>` : ''}
-      ${tips.length ? `<div class="detail-box"><strong>Для точности:</strong>${tips.map(item => `<div class="meta">• ${escapeHtml(item)}</div>`).join('')}</div>` : ''}
-      <div class="review-actions">
-        <button class="micro-button primary" type="button" onclick="confirmPart('${escapeJs(part.id)}')">Верно</button>
-        <button class="micro-button warn" type="button" onclick="quickEditPart('${escapeJs(part.id)}')">Исправить</button>
+    <article class="part-card compact-card" data-part-id="${escapeHtml(part.id)}" onclick="openPart('${escapeJs(part.id)}')">
+      ${part.imageUrl ? `<img class="part-thumb" src="${escapeHtml(part.imageUrl)}" alt="">` : '<div class="part-thumb empty-thumb">нет фото</div>'}
+      <div class="compact-card-body">
+        <div class="part-head">
+          <div><div class="part-name">${title}</div><div class="meta">${escapeHtml(meta)}</div></div>
+          <div class="confidence">${confidence}%</div>
+        </div>
+        <div class="scan-datetime">Отсканировано: <strong>${escapeHtml(formatDate(scannedAt))}</strong></div>
+        <div class="card-meta-row">
+          <span class="status-pill ${escapeHtml(status)}">${escapeHtml(statusLabelText(status))}</span>
+          <span class="scan-time">${escapeHtml(relativeTime(scannedAt))}</span>
+        </div>
+        <div class="market-mini">${escapeHtml(marketText)}</div>
       </div>
     </article>
   `;
 }
 
-function renderMarket(part) {
-  const listings = Array.isArray(part.marketListings) ? part.marketListings.filter(item => item && item.url) : [];
-  if (!listings.length) return `<div class="market-box pending"><strong>OLX:</strong><span>цены ищутся или пока не найдены</span></div>`;
+function marketSummary(listings) {
+  if (!listings.length) return 'OLX: похожие объявления пока не найдены';
   const prices = listings.map(item => Number(item.price)).filter(Number.isFinite).filter(value => value > 0);
-  const summary = prices.length ? `${formatMoney(Math.min(...prices))}–${formatMoney(Math.max(...prices))} грн · средняя ${formatMoney(Math.round(prices.reduce((a, b) => a + b, 0) / prices.length))} грн` : `${listings.length} похожих объявлений`;
-  return `
-    <div class="market-box">
-      <div class="market-head"><strong>OLX</strong><span>${escapeHtml(summary)}</span></div>
-      <div class="market-links">
-        ${listings.slice(0, 4).map(item => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><span>${escapeHtml(compact(item.title || 'Объявление', 46))}</span><b>${item.price ? `${formatMoney(item.price)} ${escapeHtml(item.currency || 'UAH')}` : 'цена ?'}</b></a>`).join('')}
-      </div>
-    </div>`;
+  if (!prices.length) return `OLX: ${listings.length} объявл.`;
+  return `OLX: ${formatMoney(Math.min(...prices))}–${formatMoney(Math.max(...prices))} грн · ${listings.length} объявл.`;
 }
+
+function openPart(id) { location.href = `/part.html?id=${encodeURIComponent(id)}`; }
 
 function statusLabelText(status) {
   return { pending: 'ожидает проверки', confirmed: 'подтверждено', corrected: 'исправлено', needs_review: 'нужна проверка', needs_photo: 'нужен доп. кадр' }[status] || status;
 }
 
-async function confirmPart(id) { await sendReview(id, { isCorrect: true }); }
-
-async function quickEditPart(id) {
-  const currentCard = document.querySelector(`[data-part-id="${CSS.escape(id)}"]`);
-  const currentName = currentCard?.querySelector('.part-name')?.textContent || '';
-  const correctedName = prompt('Правильное название детали:', currentName);
-  if (!correctedName) return;
-  await sendReview(id, { isCorrect: false, correctedName });
-}
-
-async function sendReview(id, payload) {
-  const response = await fetch(`/api/v1/parts/${id}/review`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-  });
-  if (response.ok) await loadParts();
-}
-
-function scanTimestamp(part) {
-  return part?.createdAt || part?.updatedAt || part?.scannedAt || null;
-}
-
-function latestDate(values) {
-  return values.filter(Boolean).sort((a, b) => dateValue(b) - dateValue(a))[0];
-}
-
-function dateValue(value) {
-  const time = value ? new Date(value).getTime() : 0;
-  return Number.isFinite(time) ? time : 0;
-}
-
+function scanTimestamp(part) { return part?.createdAt || part?.updatedAt || part?.scannedAt || null; }
+function latestDate(values) { return values.filter(Boolean).sort((a, b) => dateValue(b) - dateValue(a))[0]; }
+function dateValue(value) { const time = value ? new Date(value).getTime() : 0; return Number.isFinite(time) ? time : 0; }
 function relativeTime(value) {
   const time = dateValue(value);
   if (!time) return 'неизвестно';
@@ -153,35 +105,10 @@ function relativeTime(value) {
   if (days < 7) return `${days} д назад`;
   return formatDate(value);
 }
-
-function formatDate(value) {
-  const time = dateValue(value);
-  if (!time) return 'неизвестно';
-  return new Date(time).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
-function formatMoney(value) {
-  return Number(value || 0).toLocaleString('ru-RU');
-}
-
-function compact(value, limit) {
-  const text = String(value || '').trim();
-  return text.length > limit ? `${text.slice(0, limit - 1).trim()}…` : text;
-}
-
-function parseList(value) {
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value || '[]') : value;
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch { return []; }
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
-}
-
+function formatDate(value) { const time = dateValue(value); return time ? new Date(time).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'неизвестно'; }
+function formatMoney(value) { return Number(value || 0).toLocaleString('ru-RU'); }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char])); }
 function escapeJs(value) { return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 
 window.selectCategory = selectCategory;
-window.confirmPart = confirmPart;
-window.quickEditPart = quickEditPart;
+window.openPart = openPart;
