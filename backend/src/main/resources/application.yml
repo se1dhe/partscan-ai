@@ -23,3 +23,10 @@ openai:
 gemini:
   api-key: ${GEMINI_API_KEY:}
   model: ${GEMINI_MODEL:gemini-2.0-flash}
+
+olx:
+  enabled: ${OLX_ENABLED:true}
+  max-results: ${OLX_MAX_RESULTS:5}
+
+admin:
+  token: ${ADMIN_TOKEN:}
