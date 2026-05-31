@@ -36,6 +36,9 @@ dependencies {
  // Unsupported Database: PostgreSQL 18.4
  implementation 'org.flywaydb:flyway-database-postgresql'
 
+ // HTML parser для точечного поиска похожих объявлений OLX
+ implementation 'org.jsoup:jsoup:1.18.3'
+
  // Локальная dev-база, если используешь H2
  runtimeOnly 'com.h2database:h2'
 
