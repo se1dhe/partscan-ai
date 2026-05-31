@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -65,9 +66,19 @@ public class GeminiVisionService {
    parts.add(Map.of("inlineData", Map.of("mimeType", contentType(file), "data", Base64.getEncoder().encodeToString(file.getBytes()))));
    index++;
   }
+
+  Map<String, Object> generationConfig = new LinkedHashMap<>();
+  generationConfig.put("responseMimeType", "application/json");
+  generationConfig.put("temperature", 0);
+  generationConfig.put("maxOutputTokens", 2048);
+
+  if (model != null && model.startsWith("gemini-2.5")) {
+   generationConfig.put("thinkingConfig", Map.of("thinkingBudget", 0));
+  }
+
   return Map.of(
    "contents", List.of(Map.of("role", "user", "parts", parts)),
-   "generationConfig", Map.of("responseMimeType", "application/json", "temperature", 0, "maxOutputTokens", 850)
+   "generationConfig", generationConfig
   );
  }
 
