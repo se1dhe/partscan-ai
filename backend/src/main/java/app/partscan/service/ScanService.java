@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -22,12 +23,14 @@ public class ScanService {
  private final GeminiVisionService geminiVisionService;
  private final PartRepository partRepository;
  private final ObjectMapper objectMapper;
+ private final ApplicationEventPublisher events;
 
- public ScanService(OpenAiVisionService openAiVisionService, GeminiVisionService geminiVisionService, PartRepository partRepository, ObjectMapper objectMapper) {
+ public ScanService(OpenAiVisionService openAiVisionService, GeminiVisionService geminiVisionService, PartRepository partRepository, ObjectMapper objectMapper, ApplicationEventPublisher events) {
   this.openAiVisionService = openAiVisionService;
   this.geminiVisionService = geminiVisionService;
   this.partRepository = partRepository;
   this.objectMapper = objectMapper;
+  this.events = events;
  }
 
  public ScanResponse scan(MultipartFile file) {
@@ -63,6 +66,7 @@ public class ScanService {
 
   Part savedPart = partRepository.save(part);
   log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus());
+  events.publishEvent(new SavedPartEvent(savedPart.getId()));
 
   return ScanResponse.saved(savedPart);
  }
