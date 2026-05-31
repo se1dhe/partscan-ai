@@ -20,7 +20,7 @@ public class MarketEnrichmentListener {
  }
 
  @Async
- @TransactionalEventListener
+ @TransactionalEventListener(fallbackExecution = true)
  public void handle(SavedPartEvent event) {
   try {
    Part part = partRepository.findById(event.partId()).orElse(null);
