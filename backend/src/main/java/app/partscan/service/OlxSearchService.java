@@ -15,20 +15,18 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
-import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
 public class OlxSearchService {
  private static final Logger log = LoggerFactory.getLogger(OlxSearchService.class);
- private static final Pattern PRICE_PATTERN = Pattern.compile("([0-9][0-9\\s]*)\\s*(грн|uah|₴|usd|\\$|€|eur)?", Pattern.CASE_INSENSITIVE);
+ private static final Pattern PRICE_PATTERN = Pattern.compile("([0-9][0-9\\s]*)\\s*(грн|uah|uah|usd|\\$|eur)?", Pattern.CASE_INSENSITIVE);
 
  private final PartMarketListingRepository listingRepository;
  private final boolean enabled;
@@ -42,9 +40,7 @@ public class OlxSearchService {
 
  @Transactional
  public void refreshListings(Part part) {
-  if (!enabled) return;
-  if (part == null || part.getId() == null) return;
-
+  if (!enabled || part == null || part.getId() == null) return;
   List<String> queries = buildQueries(part);
   if (queries.isEmpty()) return;
 
@@ -80,12 +76,21 @@ public class OlxSearchService {
  }
 
  private String join(String first, String second) {
-  return List.of(first, second).stream().filter(StringUtils::hasText).filter(value -> !"unknown".equalsIgnoreCase(value.trim())).reduce((a, b) -> a + " " + b).orElse("");
+  List<String> values = new ArrayList<>();
+  if (StringUtils.hasText(first) && !"unknown".equalsIgnoreCase(first.trim())) values.add(first.trim());
+  if (StringUtils.hasText(second) && !"unknown".equalsIgnoreCase(second.trim())) values.add(second.trim());
+  return String.join(" ", values);
  }
 
  private List<PartMarketListing> search(String query, Part part, int limit) throws IOException {
-  URI url = UriComponentsBuilder.fromHttpUrl("https://www.olx.ua/uk/list/q-" + query.trim().replace(' ', '-') + "/").queryParam("search%5Bfilter_float_price:from%5D", "1").build(true).toUri();
-  Document document = Jsoup.connect(url.toString())
+  String url = UriComponentsBuilder.fromHttpUrl("https://www.olx.ua/uk/list/")
+   .pathSegment("q-" + query.trim().replace(' ', '-'))
+   .queryParam("search[filter_float_price:from]", "1")
+   .build()
+   .encode()
+   .toUriString();
+
+  Document document = Jsoup.connect(url)
    .userAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
    .timeout((int) Duration.ofSeconds(8).toMillis())
    .followRedirects(true)
@@ -109,21 +114,17 @@ public class OlxSearchService {
 
   String href = link.attr("abs:href");
   if (!StringUtils.hasText(href)) href = "https://www.olx.ua" + link.attr("href");
-
   String priceText = text(card.selectFirst("[data-testid=ad-price], p[data-testid=ad-price], .css-uj7mm0"));
-  Integer price = parsePrice(priceText);
-  String currency = parseCurrency(priceText);
-  String location = text(card.selectFirst("[data-testid=location-date], .css-veheph"));
-  Element image = card.selectFirst("img[src]");
 
   PartMarketListing listing = new PartMarketListing();
   listing.setPart(part);
   listing.setSource("OLX");
   listing.setTitle(title);
-  listing.setPrice(price);
-  listing.setCurrency(currency);
+  listing.setPrice(parsePrice(priceText));
+  listing.setCurrency(parseCurrency(priceText));
   listing.setUrl(href);
-  listing.setLocation(location);
+  listing.setLocation(text(card.selectFirst("[data-testid=location-date], .css-veheph")));
+  Element image = card.selectFirst("img[src]");
   listing.setImageUrl(image == null ? null : image.attr("abs:src"));
   listing.setMatchedQuery(query);
   return listing;
@@ -141,7 +142,7 @@ public class OlxSearchService {
   if (!StringUtils.hasText(value)) return "UAH";
   String lower = value.toLowerCase();
   if (lower.contains("$") || lower.contains("usd")) return "USD";
-  if (lower.contains("€") || lower.contains("eur")) return "EUR";
+  if (lower.contains("eur")) return "EUR";
   return "UAH";
  }
 
