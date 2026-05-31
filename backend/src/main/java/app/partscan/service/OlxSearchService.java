@@ -15,10 +15,13 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.text.Normalizer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,7 +29,8 @@ import java.util.regex.Pattern;
 @Service
 public class OlxSearchService {
  private static final Logger log = LoggerFactory.getLogger(OlxSearchService.class);
- private static final Pattern PRICE_PATTERN = Pattern.compile("([0-9][0-9\\s]*)\\s*(грн|uah|uah|usd|\\$|eur)?", Pattern.CASE_INSENSITIVE);
+ private static final Pattern PRICE_PATTERN = Pattern.compile("([0-9][0-9\\s]*)\\s*(грн|uah|usd|\\$|eur)?", Pattern.CASE_INSENSITIVE);
+ private static final Pattern ARTICLE_PATTERN = Pattern.compile("[a-zA-ZА-Яа-я0-9][a-zA-ZА-Яа-я0-9 ._/-]{4,}");
 
  private final PartMarketListingRepository listingRepository;
  private final boolean enabled;
@@ -44,35 +48,75 @@ public class OlxSearchService {
   List<String> queries = buildQueries(part);
   if (queries.isEmpty()) return;
 
-  List<PartMarketListing> found = new ArrayList<>();
+  List<ScoredListing> scored = new ArrayList<>();
   for (String query : queries) {
-   if (found.size() >= maxResults) break;
    try {
-    found.addAll(search(query, part, maxResults - found.size()));
+    for (PartMarketListing listing : search(query, part, maxResults * 3)) {
+     int score = relevanceScore(part, listing, query);
+     if (score >= 4 && scored.stream().noneMatch(item -> safe(item.listing().getUrl()).equals(safe(listing.getUrl())))) scored.add(new ScoredListing(listing, score));
+    }
    } catch (Exception error) {
     log.warn("OLX search failed: partId={}, query={}, message={}", part.getId(), query, error.getMessage());
    }
   }
 
+  List<PartMarketListing> found = scored.stream()
+   .sorted(Comparator.comparingInt(ScoredListing::score).reversed().thenComparing(item -> item.listing().getPrice() == null ? Integer.MAX_VALUE : item.listing().getPrice()))
+   .limit(maxResults)
+   .map(ScoredListing::listing)
+   .toList();
+
   listingRepository.deleteByPartId(part.getId());
   if (!found.isEmpty()) listingRepository.saveAll(found);
-  log.info("OLX listings refreshed: partId={}, found={}", part.getId(), found.size());
+  log.info("OLX listings refreshed: partId={}, queries={}, found={}", part.getId(), queries, found.size());
  }
 
  private List<String> buildQueries(Part part) {
   Set<String> queries = new LinkedHashSet<>();
-  addIfUseful(queries, part.getArticleNumber());
-  addIfUseful(queries, join(part.getManufacturer(), part.getArticleNumber()));
-  addIfUseful(queries, join(part.getManufacturer(), part.getName()));
-  addIfUseful(queries, part.getName());
-  addIfUseful(queries, part.getNormalizedName());
-  return queries.stream().limit(4).toList();
+  String article = cleanArticle(part.getArticleNumber());
+  String manufacturer = clean(part.getManufacturer());
+  String name = clean(part.getName());
+  String normalizedName = clean(part.getNormalizedName());
+
+  addIfUseful(queries, article);
+  addIfUseful(queries, join(manufacturer, article));
+  addIfUseful(queries, join(article, name));
+  addIfUseful(queries, join(manufacturer, name));
+  addIfUseful(queries, name);
+  addIfUseful(queries, normalizedName);
+  return queries.stream().limit(5).toList();
+ }
+
+ private int relevanceScore(Part part, PartMarketListing listing, String query) {
+  String haystack = normalize(listing.getTitle() + " " + listing.getLocation() + " " + listing.getMatchedQuery());
+  String name = normalize(part.getName());
+  String category = normalize(part.getCategory());
+  String manufacturer = normalize(part.getManufacturer());
+  String article = normalize(cleanArticle(part.getArticleNumber()));
+  String queryText = normalize(query);
+
+  int score = 0;
+  if (StringUtils.hasText(article) && article.length() >= 5 && haystack.contains(article)) score += 9;
+  if (StringUtils.hasText(manufacturer) && !"unknown".equals(manufacturer) && haystack.contains(manufacturer)) score += 3;
+  for (String token : importantTokens(name)) if (haystack.contains(token)) score += 2;
+  for (String token : importantTokens(category)) if (haystack.contains(token)) score += 1;
+  for (String token : importantTokens(queryText)) if (haystack.contains(token)) score += 1;
+  if (listing.getPrice() != null && listing.getPrice() > 0) score += 1;
+  return score;
+ }
+
+ private List<String> importantTokens(String value) {
+  if (!StringUtils.hasText(value)) return List.of();
+  List<String> tokens = new ArrayList<>();
+  for (String token : value.split("[^a-zа-я0-9]+")) {
+   if (token.length() >= 4 && !List.of("unknown", "деталь", "корпус", "система", "часть").contains(token)) tokens.add(token);
+  }
+  return tokens.stream().distinct().limit(6).toList();
  }
 
  private void addIfUseful(Set<String> queries, String value) {
-  if (!StringUtils.hasText(value)) return;
-  String cleaned = value.replace("unknown", "").replace("Неизвестная деталь", "").trim();
-  if (cleaned.length() >= 3) queries.add(cleaned);
+  String cleaned = clean(value);
+  if (cleaned.length() >= 3 && !"unknown".equalsIgnoreCase(cleaned) && !"неизвестная деталь".equalsIgnoreCase(cleaned)) queries.add(cleaned);
  }
 
  private String join(String first, String second) {
@@ -80,6 +124,14 @@ public class OlxSearchService {
   if (StringUtils.hasText(first) && !"unknown".equalsIgnoreCase(first.trim())) values.add(first.trim());
   if (StringUtils.hasText(second) && !"unknown".equalsIgnoreCase(second.trim())) values.add(second.trim());
   return String.join(" ", values);
+ }
+
+ private String clean(String value) { return value == null ? "" : value.replace("unknown", "").replace("Неизвестная деталь", "").trim(); }
+
+ private String cleanArticle(String value) {
+  if (!StringUtils.hasText(value)) return "";
+  Matcher matcher = ARTICLE_PATTERN.matcher(value);
+  return matcher.find() ? matcher.group().replaceAll("\\s+", "").trim() : value.trim();
  }
 
  private List<PartMarketListing> search(String query, Part part, int limit) throws IOException {
@@ -134,18 +186,24 @@ public class OlxSearchService {
   if (!StringUtils.hasText(value)) return null;
   Matcher matcher = PRICE_PATTERN.matcher(value.replace('\u00A0', ' '));
   if (!matcher.find()) return null;
-  String digits = matcher.group(1).replaceAll("\\s+", "");
-  try { return Integer.parseInt(digits); } catch (NumberFormatException ignored) { return null; }
+  try { return Integer.parseInt(matcher.group(1).replaceAll("\\s+", "")); }
+  catch (NumberFormatException ignored) { return null; }
  }
 
  private String parseCurrency(String value) {
   if (!StringUtils.hasText(value)) return "UAH";
-  String lower = value.toLowerCase();
+  String lower = value.toLowerCase(Locale.ROOT);
   if (lower.contains("$") || lower.contains("usd")) return "USD";
   if (lower.contains("eur")) return "EUR";
   return "UAH";
  }
 
+ private String normalize(String value) {
+  if (!StringUtils.hasText(value)) return "";
+  return Normalizer.normalize(value.toLowerCase(Locale.ROOT), Normalizer.Form.NFKC).replace('і', 'и').replace('ї', 'и').replace('є', 'е').replaceAll("[^a-zа-я0-9]+", " ").trim();
+ }
+
  private String text(Element element) { return element == null ? "" : element.text().trim(); }
  private String safe(String value) { return value == null ? "" : value; }
+ private record ScoredListing(PartMarketListing listing, int score) {}
 }
