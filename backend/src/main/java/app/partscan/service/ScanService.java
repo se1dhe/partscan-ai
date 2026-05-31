@@ -12,12 +12,15 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.util.Base64;
 import java.util.List;
 
 @Service
 public class ScanService {
  private static final Logger log = LoggerFactory.getLogger(ScanService.class);
  private static final double FINAL_CONFIDENCE_THRESHOLD = 0.9;
+ private static final long MAX_STORED_IMAGE_BYTES = 650_000;
 
  private final OpenAiVisionService openAiVisionService;
  private final GeminiVisionService geminiVisionService;
@@ -33,9 +36,7 @@ public class ScanService {
   this.events = events;
  }
 
- public ScanResponse scan(MultipartFile file) {
-  return scan(List.of(file));
- }
+ public ScanResponse scan(MultipartFile file) { return scan(List.of(file)); }
 
  public ScanResponse scan(List<MultipartFile> files) {
   log.info("Scan started: images={}, totalSize={} bytes", files.size(), totalSize(files));
@@ -48,26 +49,20 @@ public class ScanService {
 
   if (!Boolean.TRUE.equals(analysis.automotivePart())) {
    log.info("Scan rejected as non automotive part: name={}, reason={}", analysis.name(), analysis.identificationReason());
-   return ScanResponse.rejected(
-    defaultText(analysis.identificationReason(), "В кадре не похожая на автодеталь вещь. В базу не сохраняю."),
-    firstTip(analysis.photoTips())
-   );
+   return ScanResponse.rejected(defaultText(analysis.identificationReason(), "В кадре не похожая на автодеталь вещь. В базу не сохраняю."), firstTip(analysis.photoTips()));
   }
 
   Part part = toPart(analysis, result.rawResponse());
+  part.setImageUrl(toDataUrl(files.get(0)));
+
   if (!confidentEnough) {
    log.info("Scan needs angle before final save: name={}, confidence={}, images={}", part.getName(), part.getConfidence(), files.size());
-   return ScanResponse.needsAngle(
-    part,
-    "Найдено предварительно, но для сохранения нужна точность выше 90%.",
-    firstTip(analysis.photoTips())
-   );
+   return ScanResponse.needsAngle(part, "Найдено предварительно, но для сохранения нужна точность выше 90%.", firstTip(analysis.photoTips()));
   }
 
   Part savedPart = partRepository.save(part);
   log.info("Scan result saved: partId={}, name={}, confidence={}, reviewStatus={}", savedPart.getId(), savedPart.getName(), savedPart.getConfidence(), savedPart.getReviewStatus());
   events.publishEvent(new SavedPartEvent(savedPart.getId()));
-
   return ScanResponse.saved(savedPart);
  }
 
@@ -90,10 +85,7 @@ public class ScanService {
  }
 
  private VisionAnalysisResult analyzeWithGemini(List<MultipartFile> files) {
-  if (!geminiVisionService.isConfigured()) {
-   throw new IllegalStateException("No AI provider is configured. Set GEMINI_API_KEY or OPENAI_API_KEY.");
-  }
-
+  if (!geminiVisionService.isConfigured()) throw new IllegalStateException("No AI provider is configured. Set GEMINI_API_KEY or OPENAI_API_KEY.");
   log.info("Trying AI analysis with Gemini");
   return geminiVisionService.analyze(files);
  }
@@ -103,7 +95,6 @@ public class ScanService {
    log.error("Gemini fallback is not configured. Original OpenAI error: {}", openAiError.getMessage());
    throw openAiError instanceof RuntimeException runtimeException ? runtimeException : new IllegalStateException(openAiError);
   }
-
   try {
    log.info("Trying AI analysis with Gemini fallback");
    return geminiVisionService.analyze(files);
@@ -116,9 +107,7 @@ public class ScanService {
   }
  }
 
- private long totalSize(List<MultipartFile> files) {
-  return files.stream().mapToLong(MultipartFile::getSize).sum();
- }
+ private long totalSize(List<MultipartFile> files) { return files.stream().mapToLong(MultipartFile::getSize).sum(); }
 
  private Part toPart(PartAnalysisDto analysis, String rawResponse) {
   Part part = new Part();
@@ -142,6 +131,17 @@ public class ScanService {
   return part;
  }
 
+ private String toDataUrl(MultipartFile file) {
+  if (file == null || file.isEmpty() || file.getSize() > MAX_STORED_IMAGE_BYTES) return null;
+  try {
+   String contentType = defaultText(file.getContentType(), "image/jpeg");
+   return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(file.getBytes());
+  } catch (IOException error) {
+   log.warn("Could not store scan photo: message={}", error.getMessage());
+   return null;
+  }
+ }
+
  private String reviewStatus(PartAnalysisDto analysis) {
   Double confidence = analysis.confidence();
   if (Boolean.TRUE.equals(analysis.needsBetterPhoto())) return "needs_photo";
@@ -156,19 +156,11 @@ public class ScanService {
   return value;
  }
 
- private String defaultText(String value, String fallback) {
-  return value == null || value.isBlank() ? fallback : value;
- }
-
- private String firstTip(List<String> tips) {
-  return tips == null || tips.isEmpty() ? "Наведите камеру на автодеталь целиком." : tips.get(0);
- }
+ private String defaultText(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
+ private String firstTip(List<String> tips) { return tips == null || tips.isEmpty() ? "Наведите камеру на автодеталь целиком." : tips.get(0); }
 
  private String toJson(Object value) {
-  try {
-   return objectMapper.writeValueAsString(value == null ? java.util.List.of() : value);
-  } catch (JsonProcessingException e) {
-   throw new IllegalStateException("Could not serialize analysis value", e);
-  }
+  try { return objectMapper.writeValueAsString(value == null ? java.util.List.of() : value); }
+  catch (JsonProcessingException e) { throw new IllegalStateException("Could not serialize analysis value", e); }
  }
 }
