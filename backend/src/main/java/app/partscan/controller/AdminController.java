@@ -22,8 +22,8 @@ public class AdminController {
  private final PartFeedbackRepository feedbackRepository;
  private final PartMarketListingRepository listingRepository;
 
- public AdminController(@Value("${admin.token}") String adminToken, PartRepository partRepository, PartFeedbackRepository feedbackRepository, PartMarketListingRepository listingRepository) {
-  this.adminToken = adminToken;
+ public AdminController(@Value("${admin.token:}") String adminToken, PartRepository partRepository, PartFeedbackRepository feedbackRepository, PartMarketListingRepository listingRepository) {
+  this.adminToken = normalize(adminToken);
   this.partRepository = partRepository;
   this.feedbackRepository = feedbackRepository;
   this.listingRepository = listingRepository;
@@ -32,10 +32,26 @@ public class AdminController {
  @PostMapping("/database/reset")
  @ResponseStatus(HttpStatus.NO_CONTENT)
  @Transactional
- public void reset(@RequestHeader(name = "X-Admin-Token", required = false) String token) {
-  if (!StringUtils.hasText(adminToken) || !adminToken.equals(token)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid admin token");
+ public void reset(
+  @RequestHeader(name = "X-Admin-Token", required = false) String token,
+  @RequestHeader(name = "Authorization", required = false) String authorization
+ ) {
+  String providedToken = StringUtils.hasText(token) ? token : bearerToken(authorization);
+  if (!StringUtils.hasText(adminToken) || !adminToken.equals(normalize(providedToken))) {
+   throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid admin token");
+  }
   listingRepository.deleteAllInBatch();
   feedbackRepository.deleteAllInBatch();
   partRepository.deleteAllInBatch();
+ }
+
+ private String bearerToken(String value) {
+  if (!StringUtils.hasText(value)) return "";
+  String trimmed = value.trim();
+  return trimmed.regionMatches(true, 0, "Bearer ", 0, 7) ? trimmed.substring(7) : trimmed;
+ }
+
+ private String normalize(String value) {
+  return value == null ? "" : value.trim();
  }
 }
